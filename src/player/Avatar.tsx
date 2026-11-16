@@ -4,11 +4,14 @@
 
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { CLASSES, EMOTES, MOVE, type ClassId } from '../game/constants';
 import { useGame } from '../game/store';
 import type { AnimState } from '../net/interpolation';
+import { getRoom } from '../net/room';
+import { VF } from '../combat/protocol';
+import { REVIVE_RADIUS } from '../combat/defs';
 import { NEUTRAL, SKIN, toon } from './materials';
 
 export interface Pose {
@@ -20,9 +23,11 @@ export interface Pose {
   dodgeT: number;
   waveT: number;
   phase: number;
+  /** Stati del combattimento (VF): a terra, velo, Bastione, scudo… */
+  flags: number;
 }
 
-export const newPose = (): Pose => ({ speed: 0, anim: 'idle', attackT: -1, attackN: 1, dodgeT: -1, waveT: -1, phase: 0 });
+export const newPose = (): Pose => ({ speed: 0, anim: 'idle', attackT: -1, attackN: 1, dodgeT: -1, waveT: -1, phase: 0, flags: 0 });
 
 /** Avanza i timer della posa. */
 export function tickPose(p: Pose, dt: number) {
@@ -62,6 +67,19 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
   const armR = useRef<THREE.Group>(null);
   const head = useRef<THREE.Group>(null);
   const orb = useRef<THREE.Mesh>(null);
+  const bastion = useRef<THREE.Mesh>(null);
+  const shield = useRef<THREE.Mesh>(null);
+  const veil = useRef<THREE.Mesh>(null);
+  const downRing = useRef<THREE.Mesh>(null);
+  const auraMats = useMemo(
+    () => ({
+      bastion: new THREE.MeshBasicMaterial({ color: '#ffd25a', transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }),
+      shield: new THREE.MeshBasicMaterial({ color: '#fff0b0', transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending }),
+      veil: new THREE.MeshBasicMaterial({ color: '#b04dff', transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending }),
+      down: new THREE.MeshBasicMaterial({ color: '#ff4f6d', transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide }),
+    }),
+    [],
+  );
 
   const mats = useMemo(
     () => ({
@@ -97,13 +115,39 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
     let armLx = -armSwing;
     let armLz = 0.12;
 
-    if (p.anim === 'fall') {
+    const f = p.flags;
+    const veiled = (f & VF.veil) !== 0;
+    b.visible = isSelf || !veiled; // gli altri non vedono chi è sotto il Velo
+    if (bastion.current) {
+      bastion.current.visible = (f & VF.bastion) !== 0;
+      bastion.current.scale.setScalar(1 + Math.sin(t * 6) * 0.04);
+    }
+    if (shield.current) shield.current.visible = (f & VF.shield) !== 0;
+    if (veil.current) {
+      veil.current.visible = veiled;
+      auraMats.veil.opacity = isSelf ? 0.18 : 0.05 + Math.abs(Math.sin(t * 2.5)) * 0.06;
+    }
+    if (downRing.current) {
+      downRing.current.visible = (f & VF.down) !== 0;
+      auraMats.down.opacity = 0.35 + Math.sin(t * 5) * 0.15;
+    }
+
+    if (p.anim === 'down') {
+      // a terra, sulla schiena
+      b.rotation.set(-1.45, 0, 0);
+      b.position.set(0, 0.32, -0.3);
+      legSwing = 0;
+      armRx = -0.2;
+      armLx = -0.2;
+      armRz = -1.2;
+      armLz = 1.2;
+    } else if (p.anim === 'fall') {
       armRx = -2.8 + Math.sin(t * 18) * 0.4;
       armLx = -2.8 - Math.sin(t * 18) * 0.4;
       legSwing = Math.sin(t * 14) * 0.5;
     }
 
-    if (p.dodgeT >= 0) {
+    if (p.dodgeT >= 0 && p.anim !== 'down') {
       // capriola in avanti
       const k = Math.min(p.dodgeT / MOVE.dodgeTime, 1);
       b.rotation.x = easeOut(k) * Math.PI * 2;
@@ -113,7 +157,7 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
       armRx = armLx = -1.6;
     }
 
-    if (p.attackT >= 0) {
+    if (p.attackT >= 0 && p.anim !== 'down') {
       const k = Math.min(p.attackT / MOVE.attackDuration, 1);
       const e = easeOut(k);
       if (cls?.ranged) {
@@ -237,6 +281,18 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
         </group>
       </group>
 
+      <mesh ref={bastion} material={auraMats.bastion} position={[0, 1, 0]} visible={false}>
+        <sphereGeometry args={[1.25, 18, 12]} />
+      </mesh>
+      <mesh ref={shield} material={auraMats.shield} position={[0, 1, 0]} visible={false}>
+        <sphereGeometry args={[1.05, 16, 10]} />
+      </mesh>
+      <mesh ref={veil} material={auraMats.veil} position={[0, 0.95, 0]} visible={false}>
+        <capsuleGeometry args={[0.45, 0.9, 4, 10]} />
+      </mesh>
+      <mesh ref={downRing} material={auraMats.down} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} visible={false}>
+        <ringGeometry args={[REVIVE_RADIUS - 0.12, REVIVE_RADIUS, 40]} />
+      </mesh>
       <NameTag playerId={playerId} name={name} icon={cls?.icon} show={showName} />
     </group>
   );
@@ -376,7 +432,32 @@ function NameTag({ playerId, name, icon, show }: { playerId: string; name: strin
             <span>{name}</span>
           </div>
         )}
+        {show && <HpBar playerId={playerId} />}
       </div>
     </Html>
+  );
+}
+
+/** Vita del compagno sopra la testa (solo dentro la Frattura). */
+function HpBar({ playerId }: { playerId: string }) {
+  const inRun = useGame((s) => !!s.room.run && s.room.run.phase !== 'countdown');
+  const fill = useRef<HTMLDivElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!inRun) return;
+    const t = setInterval(() => {
+      const v = getRoom()?.vitals.get(playerId);
+      if (!v || !fill.current || !wrap.current) return;
+      const frac = Math.max(0, Math.min(1, v.hp / Math.max(1, v.mhp)));
+      fill.current.style.width = `${frac * 100}%`;
+      wrap.current.dataset.state = v.f & VF.dead ? 'dead' : v.f & VF.down ? 'down' : '';
+    }, 150);
+    return () => clearInterval(t);
+  }, [inRun, playerId]);
+  if (!inRun) return null;
+  return (
+    <div className="ally-hp" ref={wrap}>
+      <div className="ally-hp-fill" ref={fill} />
+    </div>
   );
 }

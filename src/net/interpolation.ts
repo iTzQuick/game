@@ -4,7 +4,7 @@
 // disegna con un piccolo ritardo (≈110 ms) interpolando tra due istantanee:
 // così il movimento resta fluido anche se i pacchetti arrivano irregolari.
 
-export type AnimState = 'idle' | 'run' | 'dodge' | 'fall';
+export type AnimState = 'idle' | 'run' | 'dodge' | 'fall' | 'down';
 
 export interface Snapshot {
   /** Tempo locale (ms) in cui l'istantanea "vale", già convertito dall'orologio del mittente. */

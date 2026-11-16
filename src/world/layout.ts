@@ -1,8 +1,10 @@
 // Disposizione del Crocevia e oggetti con cui si può interagire.
 
 import { CLASS_IDS, CLASSES, CUSTODE_LINES, WORLDS, type ClassId } from '../game/constants';
-import { displayName, getGame, openDialog, setGame } from '../game/store';
+import { displayName, getGame, openDialog, setGame, toast } from '../game/store';
 import { getRoom } from '../net/room';
+import { emitCombat } from '../combat/bus';
+import type { Dungeon } from '../combat/dungeon';
 
 export const ISLAND_RADIUS = 22;
 export const PORTAL_RADIUS = 16.5;
@@ -23,6 +25,9 @@ export const ALTARS = CLASS_IDS.map((cls, i) => {
   const [x, z] = polar(ALTAR_RADIUS, a);
   return { cls, x, z, angle: a };
 });
+
+/** La Frattura: una crepa luminosa sul bordo dell'isola, sempre aperta. */
+export const RIFT = { x: Math.sin(Math.PI / 4) * 15.5, z: Math.cos(Math.PI / 4) * 15.5 };
 
 export const PILLARS = Array.from({ length: 8 }, (_, i) => {
   const a = Math.PI / 8 + (i * Math.PI) / 4;
@@ -81,6 +86,27 @@ export const INTERACTABLES: Interactable[] = [
       getRoom()?.requestClass(a.cls);
     },
   })),
+  {
+    id: 'frattura',
+    x: RIFT.x,
+    z: RIFT.z,
+    radius: 3.4,
+    label: () => {
+      const s = getGame();
+      if (s.room.run?.phase === 'countdown') return 'La Frattura si sta aprendo…';
+      return `Entra nella Frattura · Grado ${s.room.grado}`;
+    },
+    act: () => {
+      const s = getGame();
+      if (s.room.run) return;
+      if (!s.room.classes[s.selfId]) {
+        toast('Scegli prima una classe');
+        setGame({ classPicker: true });
+        return;
+      }
+      runRequest('start');
+    },
+  },
   ...PORTALS.map<Interactable>((p) => ({
     id: `portale-${p.world.id}`,
     x: Math.sin(p.angle) * (PORTAL_RADIUS - 1.2),
@@ -91,10 +117,32 @@ export const INTERACTABLES: Interactable[] = [
   })),
 ];
 
-export function nearestInteractable(x: number, z: number): Interactable | null {
+/** Chiede all'host di aprire, lasciare o abbandonare la Frattura. */
+export function runRequest(a: 'start' | 'leave' | 'abandon') {
+  const room = getRoom();
+  if (room?.hostId) emitCombat({ t: 'runreq', a }, { to: room.hostId });
+}
+
+/** Cose con cui interagire dentro la Frattura (per ora: il portale d'uscita dopo il boss). */
+export function fratturaInteractables(d: Dungeon, complete: boolean): Interactable[] {
+  if (!complete) return [];
+  const boss = d.rooms[d.rooms.length - 1];
+  return [
+    {
+      id: 'uscita',
+      x: boss.cx,
+      z: boss.rect.z0 + 4,
+      radius: 3,
+      label: () => 'Torna al Crocevia',
+      act: () => runRequest('leave'),
+    },
+  ];
+}
+
+export function nearestInteractable(x: number, z: number, list: Interactable[] = INTERACTABLES): Interactable | null {
   let best: Interactable | null = null;
   let bestD = Infinity;
-  for (const it of INTERACTABLES) {
+  for (const it of list) {
     const d = Math.hypot(it.x - x, it.z - z);
     if (d < it.radius && d < bestD) {
       best = it;

@@ -5,6 +5,7 @@
 // (chi è l'host, chi è entrato, chi è di troppo).
 
 import type { ClassId } from '../game/constants';
+import type { ModId } from '../combat/defs';
 
 export interface Member {
   id: string;
@@ -27,13 +28,38 @@ export function queuedJoinTime(self: Member, members: Member[]): number {
   return latest >= self.joinedAt ? latest + 1 : self.joinedAt;
 }
 
+/** Una Frattura in corso. La decide e la aggiorna l'host. */
+export interface RunState {
+  /** Sale a ogni nuova Frattura. */
+  id: number;
+  seed: number;
+  grado: number;
+  mods: ModId[];
+  /** countdown: si sta aprendo; active: in corso; complete: boss sconfitto. */
+  phase: 'countdown' | 'active' | 'complete';
+  /** Stanze ripulite: le porte fino a questa sono aperte (la stanza 0 è sicura). */
+  cleared: number;
+  /** Stanza in cui si combatte ora (-1 se nessuna). */
+  fight: number;
+  /** Ondata in corso nella stanza. */
+  wave: number;
+  /** Sale a ogni sconfitta di gruppo: tutti tornano al checkpoint. */
+  wipes: number;
+}
+
 export interface RoomState {
   /** Versione: sale a ogni modifica fatta dall'host. */
   v: number;
   classes: Record<string, ClassId>;
+  /** Frattura in corso, oppure null se si è al Crocevia. */
+  run?: RunState | null;
+  /** Grado del gruppo: la prossima Frattura sarà di questo Grado. */
+  grado?: number;
+  /** Grado più alto completato (la "classifica interna"). */
+  best?: number;
 }
 
-export const emptyRoomState = (): RoomState => ({ v: 0, classes: {} });
+export const emptyRoomState = (): RoomState => ({ v: 0, classes: {}, run: null, grado: 1, best: 0 });
 
 export function orderMembers(members: Member[]): Member[] {
   return [...members].sort((a, b) => a.joinedAt - b.joinedAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -63,7 +89,7 @@ export function classHolder(state: RoomState, cls: ClassId, exceptId?: string): 
 
 export type ClassRequestResult =
   | { ok: true; state: RoomState }
-  | { ok: false; reason: 'taken' | 'not-member'; holder?: string };
+  | { ok: false; reason: 'taken' | 'not-member' | 'in-run'; holder?: string };
 
 /**
  * L'host applica una richiesta di classe. Nella stessa stanza una classe non
@@ -78,6 +104,8 @@ export function applyClassRequest(
   if (!memberIds.includes(playerId)) return { ok: false, reason: 'not-member' };
   const current = state.classes[playerId] ?? null;
   if (current === cls) return { ok: true, state };
+  // la classe si cambia tra una missione e l'altra, non dentro una Frattura
+  if (state.run && state.run.phase !== 'countdown') return { ok: false, reason: 'in-run' };
   if (cls) {
     const holder = classHolder(state, cls, playerId);
     if (holder) return { ok: false, reason: 'taken', holder };
@@ -85,7 +113,7 @@ export function applyClassRequest(
   const classes = { ...state.classes };
   if (cls) classes[playerId] = cls;
   else delete classes[playerId];
-  return { ok: true, state: { v: state.v + 1, classes } };
+  return { ok: true, state: { ...state, v: state.v + 1, classes } };
 }
 
 /**
@@ -106,7 +134,7 @@ export function normalizeRoomState(state: RoomState, orderedIds: string[]): Room
   const same =
     Object.keys(classes).length === Object.keys(state.classes).length &&
     Object.entries(classes).every(([k, c]) => state.classes[k] === c);
-  return same ? state : { v: state.v + 1, classes };
+  return same ? state : { ...state, v: state.v + 1, classes };
 }
 
 /**

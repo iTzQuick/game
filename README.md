@@ -2,11 +2,46 @@
 
 Action-RPG cooperativo 3D nel browser (PC e telefono), fino a 4 giocatori su invito.
 
-Questo è il **prototipo della tappa 3** della roadmap: il Crocevia online, fino a 4
-giocatori. Serve a verificare che in 4 il gioco resti fluido prima di costruire il
-combattimento (tappa 4).
+Stato: **tappa 4** della roadmap, il combattimento. Ci sono le 4 classi con le loro
+abilità, i nemici e la prima Frattura. È la tappa da cui si inizia a giocare insieme.
 
 ## Cosa c'è
+
+### Tappa 4: il combattimento
+
+- **La Frattura**: una crepa sul bordo del Crocevia. Chiunque abbia una classe può
+  aprirla; dopo 5 secondi tutto il gruppo ci entra. È un dungeon generato ogni volta
+  (stanza d'ingresso, 3–5 stanze di combattimento, stanza del boss). Entrando in una
+  stanza compaiono i nemici, e la porta si apre quando la stanza è ripulita.
+- **Grado infinito**: ogni Frattura completata alza il Grado del gruppo. Nemici più
+  forti e più numerosi, ondate doppie dal Grado 3, e modificatori (nemici veloci,
+  niente cure, colpi pesanti, nebbia di veli, frenesia) dal Grado 3 e 6. Il pannello
+  della stanza mostra il Grado e il record del gruppo.
+- **Nemici**: Ombra, Sciame, Riflesso (spara), Bruto (schianto ad area), Velato
+  (quasi invisibile, prende metà danni finché la Custode non lo rivela). Boss:
+  **l'Eco della Frattura**, che chiama rinforzi, spara anelli di proiettili e sotto
+  metà vita si infuria. Ogni attacco nemico ha un preavviso rosso a terra.
+- **Abilità Q/E/R e Ultra F** delle 4 classi, come nel documento: Colpo di scudo,
+  Provocazione, Barriera, Bastione; Scatto d'ombra, Lame vorticanti, Velo, Mille tagli;
+  Varco, Trappola del vuoto, Dardo arcano, Collasso; Raggio curativo, Rivelazione,
+  Benedizione, Alba. La Ultra si carica colpendo, subendo danni e curando.
+- **Le 6 combo di coppia**: Alle spalle (Guardiano + Lama), Varco d'ombra (Tessitore +
+  Lama), Implosione (Tessitore + Guardiano), Barriera di luce (Custode + Guardiano:
+  rimanda i proiettili), Varco luminoso (Custode + Tessitore: cura chi ci passa),
+  Esecuzione (Custode + Lama).
+- **Mira automatica** sul nemico più vicino davanti a te: sempre attiva sul telefono,
+  disattivabile su PC dalle impostazioni.
+- **Caduta**: a zero vita si va a terra; un compagno che resta vicino per 2,5 secondi
+  ti rialza. Dopo 20 secondi si è fuori combattimento fino alla fine della stanza. Se
+  cadono tutti, si riparte dal checkpoint (l'ingresso della stanza) con la vita piena.
+- **Host**: il dispositivo dell'host calcola i nemici. Se esce a metà combattimento,
+  il successivo riprende la regia con gli stessi nemici.
+
+Valori, danni e ricariche sono un primo bilanciamento (`src/combat/defs.ts`): il
+documento dice che si tarano giocando. Bottino, livelli e salvataggi arrivano con la
+tappa 5: per ora il Grado vale finché la stanza resta aperta.
+
+### Tappa 3: il Crocevia online
 
 - **Il Crocevia**: isola di pietra sospesa nel vuoto con i 4 portali spenti (Città
   Sommersa, Foresta dei Sussurri, Metropoli Spenta, Deserto degli Specchi), il Custode
@@ -19,8 +54,7 @@ combattimento (tappa 4).
 - **4 classi uniche per stanza**: Guardiano, Lama d'Ombra, Tessitore di Portali,
   Custode della Luce. Si scelgono dal pannello (tasto C) o avvicinandosi agli altari.
 - **Movimento in terza persona** con fisica (Rapier): corsa, schivata con capriola,
-  attacco base (combo da 3 in mischia, dardo a distanza). Per ora gli attacchi sono
-  solo animazione: i danni arrivano con la tappa 4.
+  attacco base (combo da 3 in mischia, dardo a distanza).
 - **Ping "guarda qui" ed emote**, visibili a tutti.
 - **Controlli PC e telefono** come nel documento di design, qualità grafica bassa,
   media o alta, e un pannello con FPS e latenza (Impostazioni → Statistiche).
@@ -35,13 +69,14 @@ combattimento (tappa 4).
 | Telecamera | Mouse (clicca per catturarlo) | Trascina a destra |
 | Attacco | Click sinistro | Pulsante grande |
 | Schivata | Spazio | Pulsante sopra l'attacco |
+| Abilità 1–3 | Q, E, R | Tre pulsanti ad arco |
+| Ultra | F | Pulsante ★ che si illumina quando è carica |
 | Interagire | G | Pulsante che compare vicino all'oggetto |
 | Ping | Click centrale | Doppio tocco sul mondo |
 | Emote | 1–4 | Pulsante emote |
 | Classe | C | Pulsante "Classe" |
 
-Q, E, R e F (abilità e Ultra) sono già indicati nelle schede delle classi, ma si
-attivano con il combattimento.
+Chi è host vede anche **Abbandona**, che riporta tutti al Crocevia.
 
 ## Provarlo subito (senza account)
 
@@ -118,8 +153,10 @@ src/
   game/      costanti (classi, mondi, movimento, rete), stato, input, sessione
   net/       stanza (host, classi, traffico), WebRTC, Supabase, interpolazione
   player/    giocatore locale (fisica e telecamera), altri giocatori, avatar
-  world/     il Crocevia e le interazioni
-  fx/        dardi, fendenti, ping
+  combat/    numeri di gioco, Frattura generata, simulazione dei nemici (host),
+             regia della Frattura, abilità e combo, stato del combattimento, grafica
+  world/     il Crocevia, la Frattura e le interazioni
+  fx/        fendenti, anelli, lampi, raggi, ping
   ui/        menu, interfaccia, controlli touch, statistiche
 tests/       test unitari (vitest)
 scripts/     test end-to-end multigiocatore (Playwright)
@@ -129,7 +166,19 @@ Le regole della stanza (`src/net/roomLogic.ts`) sono funzioni pure: ogni disposi
 le calcola sulla stessa lista di presenti e arriva alla stessa conclusione su chi è
 l'host e chi è entrato, senza un server.
 
+Nel combattimento ognuno fa la sua parte:
+
+- **l'host** simula i nemici (`src/combat/sim.ts`, logica pura e testata) e manda le
+  loro posizioni ~15 volte al secondo, più gli attacchi con il loro preavviso;
+- **chi attacca** decide chi ha colpito, sui nemici come li vede, e manda i colpi
+  all'host, che aggiorna la vita dei nemici;
+- **chi viene attaccato** controlla da sé se il colpo lo prende, contro la propria
+  posizione vera: una schivata fatta in tempo vale sempre, anche con un po' di ritardo
+  di rete;
+- la Frattura si genera da un seme, quindi in rete viaggia solo un numero.
+
 ## Prossima tappa
 
-Tappa 4, il combattimento: abilità Q/E/R e Ultra per le 4 classi, nemici calcolati
-dall'host, mira automatica, caduta e rianimazione, combo di coppia e la prima Frattura.
+Tappa 5, la progressione: livelli per classe con l'albero a 3 rami, bottino in 5
+rarità, frammenti per il crafting, la base condivisa, i salvataggi su Supabase e gli
+avatar generati dalle foto.

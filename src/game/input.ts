@@ -4,7 +4,18 @@
 import { INTERACT_KEY } from './constants';
 import { controlsBlocked, getGame, setGame } from './store';
 
-export type Action = 'attack' | 'dodge' | 'interact' | 'emote0' | 'emote1' | 'emote2' | 'emote3';
+export type Action =
+  | 'attack'
+  | 'dodge'
+  | 'interact'
+  | 'abQ'
+  | 'abE'
+  | 'abR'
+  | 'abF'
+  | 'emote0'
+  | 'emote1'
+  | 'emote2'
+  | 'emote3';
 
 export const input = {
   keys: new Set<string>(),
@@ -83,6 +94,10 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
       e.preventDefault();
       press('dodge');
     } else if (e.code === INTERACT_KEY) press('interact');
+    else if (e.code === 'KeyQ') press('abQ');
+    else if (e.code === 'KeyE') press('abE');
+    else if (e.code === 'KeyR') press('abR');
+    else if (e.code === 'KeyF') press('abF');
     else if (e.code >= 'Digit1' && e.code <= 'Digit4') press(`emote${Number(e.code.slice(5)) - 1}` as Action);
   };
   const onKeyUp = (e: KeyboardEvent) => input.keys.delete(e.code);

@@ -6,6 +6,8 @@ import { inviteLink, leaveRoom } from '../game/session';
 import { advanceDialog, setGame, updateSettings, useGame, type Quality } from '../game/store';
 import { getRoom } from '../net/room';
 import { StatsPanel, linkLabel } from './Stats';
+import { CombatHud } from './CombatHud';
+import { runRequest } from '../world/layout';
 
 export function Hud({ touch }: { touch: boolean }) {
   const showStats = useGame((s) => s.settings.showStats);
@@ -21,6 +23,7 @@ export function Hud({ touch }: { touch: boolean }) {
       <RoomPanel />
       <TopButtons touch={touch} />
       {showStats && <StatsPanel />}
+      <CombatHud touch={touch} />
       <Toasts />
       {!touch && pointerLocked && !anyMenu && <div className="crosshair" />}
       {!touch && !pointerLocked && !anyMenu && <div className="lock-hint">Clicca sul gioco per muovere la visuale con il mouse</div>}
@@ -87,15 +90,25 @@ function RoomPanel() {
           );
         })}
       </ul>
-      <div className="muted small-text">{room.members.length}/4 giocatori</div>
+      <div className="muted small-text">
+        {room.members.length}/4 giocatori · Grado {room.grado}
+        {room.best > 0 && <> · record {room.best}</>}
+      </div>
     </div>
   );
 }
 
 function TopButtons({ touch }: { touch: boolean }) {
   const canFullscreen = touch && typeof document !== 'undefined' && document.fullscreenEnabled;
+  const isHost = useGame((s) => s.room.hostId === s.selfId);
+  const inRun = useGame((s) => !!s.room.run && s.room.run.phase !== 'complete');
   return (
     <div className="top-buttons">
+      {isHost && inRun && (
+        <button className="danger" onClick={() => runRequest('abandon')} title="Solo l'host: tutti tornano al Crocevia">
+          Abbandona
+        </button>
+      )}
       <button onClick={() => setGame((s) => ({ classPicker: !s.classPicker }))} title="Classe (C)">
         Classe
       </button>
@@ -211,7 +224,9 @@ function ClassPicker() {
             );
           })}
         </div>
-        <p className="muted small-text">Le abilità si attivano con il combattimento (prossima tappa).</p>
+        <p className="muted small-text">
+          La Ultra si carica colpendo, subendo danni e curando. La classe si cambia al Crocevia, tra una Frattura e l’altra.
+        </p>
         <div className="modal-actions">
           <button onClick={() => setGame({ classPicker: false })}>{mine ? 'Al Crocevia' : 'Scegli più tardi'}</button>
         </div>
@@ -259,6 +274,10 @@ function SettingsPanel() {
           </div>
         </label>
         <label className="row">
+          <span>Mira automatica (sul telefono è sempre attiva)</span>
+          <input type="checkbox" checked={settings.autoAim} onChange={(e) => updateSettings({ autoAim: e.target.checked })} />
+        </label>
+        <label className="row">
           <span>Statistiche di rete e FPS</span>
           <input type="checkbox" checked={settings.showStats} onChange={(e) => updateSettings({ showStats: e.target.checked })} />
         </label>
@@ -276,6 +295,8 @@ function HelpPanel({ touch }: { touch: boolean }) {
     ['Telecamera', 'Mouse (clicca per catturarlo)', 'Trascina a destra'],
     ['Attacco', 'Click sinistro', 'Pulsante grande'],
     ['Schivata', 'Spazio', 'Pulsante sopra l’attacco'],
+    ['Abilità 1–3', 'Q, E, R', 'Tre pulsanti ad arco'],
+    ['Ultra', 'F', 'Pulsante che si illumina quando è carica'],
     ['Interagire', INTERACT_KEY_LABEL, 'Pulsante che compare vicino'],
     ['Ping “guarda qui”', 'Click centrale', 'Doppio tocco sul mondo'],
     ['Emote', '1 2 3 4', 'Pulsante emote'],

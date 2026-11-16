@@ -6,7 +6,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { CLASSES, NET } from '../game/constants';
 import { addPing, getGame, showEmote, useGame } from '../game/store';
-import { spawnBolt, spawnSlash } from '../fx/effects';
+import { spawnSlash } from '../fx/effects';
+import { remoteBolt } from '../combat/abilities';
+import { combat } from '../combat/runtime';
 import { getRoom } from '../net/room';
 import { Avatar, newPose, tickPose, type Pose } from './Avatar';
 import { NEUTRAL } from './materials';
@@ -39,7 +41,7 @@ export function RemotePlayers() {
           if (ev.a === 'attack') {
             pose.attackT = 0;
             pose.attackN = ev.n;
-            if (cls && CLASSES[cls].ranged) spawnBolt(ev.p, ev.r, color);
+            if (cls && CLASSES[cls].ranged) remoteBolt(cls, ev.p, ev.r);
             else spawnSlash(ev.p, ev.r, color, ev.n);
           } else {
             pose.dodgeT = 0;
@@ -90,6 +92,8 @@ function RemotePlayer({ id, name }: { id: string; name: string }) {
     g.rotation.y = s.r;
     pose.speed = s.s;
     pose.anim = s.a;
+    pose.flags = getRoom()?.vitals.get(id)?.f ?? 0;
+    combat.renderPos.set(id, { x: s.p[0], y: s.p[1], z: s.p[2] });
     tickPose(pose, dt);
   });
 

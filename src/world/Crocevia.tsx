@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { CLASSES, type ClassId } from '../game/constants';
 import { useGame, type Quality } from '../game/store';
 import { stone } from '../player/materials';
-import { ALTARS, ISLAND_RADIUS, PILLARS, PORTALS, seeded } from './layout';
+import { ALTARS, ISLAND_RADIUS, PILLARS, PORTALS, RIFT, seeded } from './layout';
 
 /** Rumore ripetibile per posizione: i vertici condivisi restano attaccati. */
 function hash3(x: number, y: number, z: number): number {
@@ -50,6 +50,7 @@ export function Crocevia({ quality }: { quality: Quality }) {
       {PILLARS.map((p, i) => (
         <Pillar key={i} {...p} />
       ))}
+      <Rift />
       <FloatingRocks count={quality === 'bassa' ? 14 : quality === 'media' ? 26 : 40} />
       <DistantRings />
     </group>
@@ -332,6 +333,54 @@ function Portal({
       <Html position={[0, 6, 0]} center distanceFactor={16} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
         <div className="portal-label" style={{ color: tint }}>
           {name}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+/** La Frattura: una crepa verticale di luce. Pulsa quando si sta aprendo. */
+function Rift() {
+  const opening = useGame((s) => s.room.run?.phase === 'countdown');
+  const grado = useGame((s) => s.room.grado);
+  const group = useRef<THREE.Group>(null);
+  const mat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#ff5fd2', transparent: true, opacity: 0.9, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    [],
+  );
+  const shards = useMemo(() => {
+    const rnd = seeded(99);
+    let y = 0.2;
+    let x = 0;
+    return Array.from({ length: 9 }, () => {
+      const h = 0.35 + rnd() * 0.35;
+      const nx = (rnd() - 0.5) * 0.7;
+      const s = { x: (x + nx) / 2, y: y + h / 2, h: Math.hypot(h, nx - x), rot: Math.atan2(nx - x, h), w: 0.08 + rnd() * 0.14 };
+      x = nx;
+      y += h;
+      return s;
+    });
+  }, []);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    mat.opacity = opening ? 0.75 + Math.sin(t * 14) * 0.25 : 0.7 + Math.sin(t * 2.2) * 0.2;
+    if (group.current) group.current.scale.x = opening ? 1.6 + Math.sin(t * 10) * 0.3 : 1 + Math.sin(t * 1.3) * 0.08;
+  });
+  const facing = Math.atan2(RIFT.x, RIFT.z);
+  return (
+    <group position={[RIFT.x, 0, RIFT.z]} rotation={[0, facing, 0]}>
+      <group ref={group}>
+        {shards.map((s, i) => (
+          <mesh key={i} material={mat} position={[s.x, s.y, 0]} rotation={[0, 0, -s.rot]}>
+            <planeGeometry args={[s.w, s.h]} />
+          </mesh>
+        ))}
+      </group>
+      <pointLight position={[0, 2, 1]} color="#ff5fd2" intensity={opening ? 14 : 6} distance={8} />
+      <Sparkles count={30} scale={[2, 4, 2]} position={[0, 2, 0]} size={3} speed={opening ? 2 : 0.6} color="#ff8be0" />
+      <Html position={[0, 5.4, 0]} center distanceFactor={14} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
+        <div className="portal-label" style={{ color: '#ff8be0', opacity: 0.85 }}>
+          {opening ? 'La Frattura si apre…' : `Frattura · Grado ${grado}`}
         </div>
       </Html>
     </group>

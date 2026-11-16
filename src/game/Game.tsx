@@ -10,15 +10,24 @@ import { RemotePlayers } from '../player/RemotePlayers';
 import { Hud } from '../ui/Hud';
 import { TouchControls } from '../ui/TouchControls';
 import { Crocevia } from '../world/Crocevia';
-import { installDesktopInput } from './input';
+import { Frattura } from '../world/Frattura';
+import { installDesktopInput, press } from './input';
 import { isTouchDevice, useGame } from './store';
 import { frameStats } from '../ui/Stats';
+import { getRoom } from '../net/room';
+import { dispatchCombat, isCombatMsg } from '../combat/bus';
+import { director } from '../combat/director';
+import { playRemoteAbility } from '../combat/abilities';
+import { combat } from '../combat/runtime';
+import { CombatView } from '../combat/view';
+import { runRequest } from '../world/layout';
 
-if (window.__fratture) window.__fratture.local = localDebug;
+if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press });
 
 export function Game() {
   const quality = useGame((s) => s.settings.quality);
   const touchSetting = useGame((s) => s.settings.touch);
+  const inRun = useGame((s) => !!s.room.run && s.room.run.phase !== 'countdown');
   const wrap = useRef<HTMLDivElement>(null);
   const touch = touchSetting === 'on' || (touchSetting === 'auto' && isTouchDevice());
 
@@ -27,6 +36,22 @@ export function Game() {
     if (!canvas) return;
     return installDesktopInput(canvas);
   }, [quality]);
+
+  // combattimento: messaggi dalla rete, regia dell'host, effetti degli altri
+  useEffect(() => {
+    const room = getRoom();
+    const off = room?.onEvent((from, ev) => {
+      if (isCombatMsg(ev)) dispatchCombat(from, ev);
+    });
+    combat.onRemoteAbility = playRemoteAbility;
+    director.start();
+    return () => {
+      off?.();
+      director.stop();
+      combat.onRemoteAbility = null;
+      combat.clearWorld();
+    };
+  }, []);
 
   const dpr: [number, number] =
     quality === 'bassa' ? [0.75, 1] : quality === 'media' ? [1, Math.min(1.5, window.devicePixelRatio)] : [1, Math.min(2, window.devicePixelRatio)];
@@ -46,10 +71,11 @@ export function Game() {
       >
         <Suspense fallback={null}>
           <Physics gravity={[0, -20, 0]}>
-            <Crocevia quality={quality} />
+            {inRun ? <Frattura quality={quality} /> : <Crocevia quality={quality} />}
             <LocalPlayer />
           </Physics>
           <RemotePlayers />
+          <CombatView />
           <Effects />
           <FrameCounter />
         </Suspense>
@@ -59,7 +85,6 @@ export function Game() {
     </div>
   );
 }
-
 
 function FrameCounter() {
   useFrame((_, dt) => frameStats.tick(dt));

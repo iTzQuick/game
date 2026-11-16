@@ -5,6 +5,9 @@ import { useEffect, useRef } from 'react';
 import { EMOTES } from '../game/constants';
 import { input, press, requestPing } from '../game/input';
 import { setGame, useGame } from '../game/store';
+import { CLASSES } from '../game/constants';
+import { abilityState } from '../combat/abilities';
+import { SLOTS, abilityName, usePoll } from './CombatHud';
 
 const JOY_RADIUS = 56;
 const TOUCH_LOOK = 2.2;
@@ -131,6 +134,7 @@ export function TouchControls() {
         <button className="tbtn attack" onPointerDown={btn('attack')} aria-label="Attacco">
           ⚔
         </button>
+        <AbilityButtons />
         <button
           className="tbtn emote"
           onPointerDown={(e) => {
@@ -160,5 +164,36 @@ export function TouchControls() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Tre pulsanti ad arco per Q, E, R e il pulsante della Ultra che si illumina quando è carica. */
+function AbilityButtons() {
+  usePoll(120);
+  const cls = useGame((s) => s.room.classes[s.selfId] ?? null);
+  if (!cls) return null;
+  const now = performance.now();
+  return (
+    <>
+      {SLOTS.map((slot) => {
+        const st = abilityState(cls, slot, now);
+        return (
+          <button
+            key={slot}
+            className={`tbtn ab ab-${slot}${st.ready ? ' ready' : ''}`}
+            style={{ '--cls': CLASSES[cls].color, '--left': st.left } as React.CSSProperties}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              press(`ab${slot}` as 'abQ');
+            }}
+            aria-label={abilityName(cls, slot)}
+          >
+            <span className="ab-letter">{slot === 'F' ? '★' : slot}</span>
+            {!st.ready && slot !== 'F' && st.seconds > 0 && <span className="ab-cd">{st.seconds}</span>}
+          </button>
+        );
+      })}
+    </>
   );
 }

@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import type { ClassId } from './constants';
-import type { Member } from '../net/roomLogic';
+import type { Member, RunState } from '../net/roomLogic';
 
 export type Quality = 'bassa' | 'media' | 'alta';
 export type LinkKind = 'local' | 'p2p' | 'relay' | 'connecting';
@@ -19,6 +19,8 @@ export interface Settings {
   sensitivity: number;
   showStats: boolean;
   touch: 'auto' | 'on' | 'off';
+  /** Mira automatica sul nemico più vicino davanti (sul telefono è sempre attiva). */
+  autoAim: boolean;
 }
 
 export interface Dialog {
@@ -56,6 +58,9 @@ export interface RoomView {
   members: Member[];
   classes: Record<string, ClassId>;
   peers: Record<string, PeerInfo>;
+  run: RunState | null;
+  grado: number;
+  best: number;
 }
 
 interface GameStore {
@@ -74,6 +79,8 @@ interface GameStore {
   pings: Ping[];
   emotes: Record<string, { e: number; t0: number }>;
   pointerLocked: boolean;
+  /** Combo di coppia appena riuscita (striscione al centro dello schermo). */
+  combo: { name: string; t0: number } | null;
 }
 
 const SETTINGS_KEY = 'fratture.settings';
@@ -89,6 +96,7 @@ function loadSettings(): Settings {
     sensitivity: 1,
     showStats: false,
     touch: 'auto',
+    autoAim: true,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -115,6 +123,9 @@ export const emptyRoom = (): RoomView => ({
   members: [],
   classes: {},
   peers: {},
+  run: null,
+  grado: 1,
+  best: 0,
 });
 
 export const useGame = create<GameStore>(() => ({
@@ -133,6 +144,7 @@ export const useGame = create<GameStore>(() => ({
   pings: [],
   emotes: {},
   pointerLocked: false,
+  combo: null,
 }));
 
 export const setGame = useGame.setState;

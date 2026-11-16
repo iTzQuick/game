@@ -22,6 +22,7 @@ import {
   type RoomState,
 } from './roomLogic';
 import { LocalSignaling, SupabaseSignaling, type Signaling } from './signaling';
+import type { CombatMsg } from '../combat/protocol';
 
 type Vec3 = [number, number, number];
 
@@ -29,10 +30,11 @@ export type GameEvent =
   | { t: 'act'; a: 'attack'; n: number; p: Vec3; r: number }
   | { t: 'act'; a: 'dodge'; p: Vec3; r: number }
   | { t: 'emote'; e: number }
-  | { t: 'ping'; p: Vec3 };
+  | { t: 'ping'; p: Vec3 }
+  | CombatMsg;
 
 type NetMsg =
-  | { t: 's'; ts: number; p: Vec3; r: number; a: AnimState; v: number }
+  | { t: 's'; ts: number; p: Vec3; r: number; a: AnimState; v: number; hp?: number; mhp?: number; f?: number }
   | { t: 'room'; st: RoomState }
   | { t: 'creq'; cls: ClassId | null }
   | { t: 'cden'; cls: ClassId; holder?: string }
@@ -47,6 +49,18 @@ export interface LocalState {
   r: number;
   a: AnimState;
   v: number;
+  hp: number;
+  mhp: number;
+  /** Stati del giocatore (VF in combat/protocol). */
+  f: number;
+}
+
+export interface Vitals {
+  hp: number;
+  mhp: number;
+  f: number;
+  /** Ultima posizione ricevuta (senza ritardo di interpolazione): serve all'host per i nemici. */
+  p: Vec3;
 }
 
 export function supabaseConfig(): { url: string; key: string } | null {
@@ -87,6 +101,8 @@ export class RoomClient {
   hostId: string | null = null;
   roomState: RoomState = emptyRoomState();
   readonly remotes = new Map<string, SnapshotBuffer>();
+  /** Vita e stati degli altri giocatori, dall'ultima posizione ricevuta. */
+  readonly vitals = new Map<string, Vitals>();
   private links = new Map<string, LinkKind>();
   private rtt = new Map<string, number>();
   private listeners = new Set<(from: string, ev: GameEvent) => void>();
@@ -96,6 +112,7 @@ export class RoomClient {
   private closed = false;
   private timers: ReturnType<typeof setInterval>[] = [];
   private lastRelayState = 0;
+  private lastRelayUnreliable = 0;
   private rttTick = 0;
   private pending: { cls: ClassId | null; tries: number; timer?: ReturnType<typeof setTimeout> } | null = null;
   /** Ultima classe chiesta: se la perdiamo per una disconnessione, la richiediamo. */
@@ -231,6 +248,7 @@ export class RoomClient {
     for (const id of this.admittedIds) this.goneAt.delete(id);
 
     for (const id of [...this.remotes.keys()]) if (!others.includes(id)) this.remotes.delete(id);
+    for (const id of [...this.vitals.keys()]) if (!others.includes(id)) this.vitals.delete(id);
     for (const id of [...this.links.keys()]) if (!others.includes(id)) this.links.delete(id);
     for (const id of others) {
       if (!this.links.has(id)) this.links.set(id, this.mesh ? 'connecting' : this.mode === 'local' ? 'local' : 'relay');
@@ -278,13 +296,27 @@ export class RoomClient {
     for (const id of this.others) peers[id] = { link: this.links.get(id) ?? 'connecting', rtt: this.rtt.get(id) ?? null };
     const admitted = admittedMembers(this.members, NET.maxPlayers);
     const cur = getGame().room;
+    const st = this.roomState;
     const same =
       cur.hostId === this.hostId &&
-      cur.classes === this.roomState.classes &&
+      cur.classes === st.classes &&
+      cur.run === (st.run ?? null) &&
+      cur.grado === (st.grado ?? 1) &&
+      cur.best === (st.best ?? 0) &&
       cur.members.length === admitted.length &&
       cur.members.every((m, i) => m.id === admitted[i].id && m.name === admitted[i].name) &&
       JSON.stringify(cur.peers) === JSON.stringify(peers);
-    if (!same) patchRoom({ members: admitted, hostId: this.hostId, classes: this.roomState.classes, peers });
+    if (!same) {
+      patchRoom({
+        members: admitted,
+        hostId: this.hostId,
+        classes: st.classes,
+        run: st.run ?? null,
+        grado: st.grado ?? 1,
+        best: st.best ?? 0,
+        peers,
+      });
+    }
   }
 
   // --- classi --------------------------------------------------------------
@@ -329,6 +361,8 @@ export class RoomClient {
     } else if (r.reason === 'taken' && cls) {
       if (playerId === this.self.id) toast(`Classe già scelta da ${this.nameOf(r.holder ?? '')}`);
       else this.sendEvent({ t: 'cden', cls, holder: r.holder }, playerId);
+    } else if (r.reason === 'in-run' && playerId === this.self.id) {
+      toast('La classe si cambia al Crocevia, non dentro una Frattura');
     }
   }
 
@@ -341,7 +375,17 @@ export class RoomClient {
   /** Posizione del giocatore locale. La chiama LocalPlayer ~20 volte al secondo. */
   sendState(s: LocalState) {
     if (!this.settled || this.closed) return;
-    const msg: NetMsg = { t: 's', ts: performance.now(), p: [r2(s.p[0]), r2(s.p[1]), r2(s.p[2])], r: r2(s.r), a: s.a, v: r2(s.v) };
+    const msg: NetMsg = {
+      t: 's',
+      ts: performance.now(),
+      p: [r2(s.p[0]), r2(s.p[1]), r2(s.p[2])],
+      r: r2(s.r),
+      a: s.a,
+      v: r2(s.v),
+      hp: Math.round(s.hp),
+      mhp: Math.round(s.mhp),
+      f: s.f,
+    };
     let needRelay = false;
     for (const id of this.others) {
       if (this.mesh?.send(id, msg, false)) this.stats.sentP2P++;
@@ -373,7 +417,35 @@ export class RoomClient {
   }
 
   emit(ev: GameEvent) {
-    this.sendEvent(ev);
+    this.sendEvent(ev as NetMsg);
+  }
+
+  /** Messaggio frequente e "senza garanzia" a tutti (istantanee dei nemici). */
+  sendUnreliable(msg: GameEvent) {
+    if (!this.settled || this.closed) return;
+    let needRelay = false;
+    for (const id of this.others) {
+      if (this.mesh?.send(id, msg, false)) this.stats.sentP2P++;
+      else needRelay = true;
+    }
+    if (!needRelay) return;
+    const now = performance.now();
+    if (this.sig.kind === 'local' || now - this.lastRelayUnreliable >= 1000 / NET.relayHz) {
+      this.lastRelayUnreliable = now;
+      this.sig.send(msg);
+      this.stats.sentRelay++;
+    }
+  }
+
+  /** Solo l'host: modifica lo stato condiviso della stanza (per esempio la Frattura in corso). */
+  updateRoom(fn: (s: RoomState) => RoomState): boolean {
+    if (!this.isHost || this.closed) return false;
+    const next = fn(this.roomState);
+    if (next === this.roomState) return false;
+    this.roomState = { ...next, v: this.roomState.v + 1 };
+    this.broadcastRoomState();
+    this.publish();
+    return true;
   }
 
   private measureRtt() {
@@ -409,6 +481,7 @@ export class RoomClient {
           this.remotes.set(from, b);
         }
         b.push(msg.ts, performance.now(), { p: msg.p, r: msg.r, a: msg.a, s: msg.v });
+        if (msg.hp !== undefined) this.vitals.set(from, { hp: msg.hp, mhp: msg.mhp ?? msg.hp, f: msg.f ?? 0, p: msg.p });
         break;
       }
       case 'room':
@@ -440,10 +513,9 @@ export class RoomClient {
       case 'po':
         this.rtt.set(from, Math.round(performance.now() - msg.ts));
         break;
-      case 'act':
-      case 'emote':
-      case 'ping':
-        for (const l of this.listeners) l(from, msg);
+      default:
+        // eventi di gioco (azioni, emote, ping, combattimento)
+        for (const l of this.listeners) l(from, msg as GameEvent);
         break;
     }
   }
