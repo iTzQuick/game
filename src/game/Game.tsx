@@ -21,8 +21,11 @@ import { playRemoteAbility } from '../combat/abilities';
 import { combat } from '../combat/runtime';
 import { CombatView } from '../combat/view';
 import { runRequest } from '../world/layout';
+import { groupKeeper } from '../progress/group';
+import { initRewards } from '../progress/rewards';
+import { getProgress, mutate } from '../progress/store';
 
-if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press });
+if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press, groupKeeper, getProgress, mutate });
 
 export function Game() {
   const quality = useGame((s) => s.settings.quality);
@@ -45,8 +48,12 @@ export function Game() {
     });
     combat.onRemoteAbility = playRemoteAbility;
     director.start();
+    groupKeeper.start();
+    const offRewards = initRewards();
     return () => {
       off?.();
+      offRewards();
+      groupKeeper.stop();
       director.stop();
       combat.onRemoteAbility = null;
       combat.clearWorld();

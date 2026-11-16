@@ -23,6 +23,8 @@ import {
 import { walkable, type Dungeon } from './dungeon';
 import { VF, type CombatMsg, type ZoneSpec } from './protocol';
 import type { Hit } from './sim';
+import { emptyMods, type Mods } from '../progress/model';
+import { POTION_HEAL } from '../progress/defs';
 
 export interface EnemyView {
   id: number;
@@ -127,6 +129,8 @@ export interface MyVitals {
   cd: { Q: number; E: number; R: number };
   varcoCd: number;
   lastHurt: number;
+  /** pozioni del Giardino per questa Frattura */
+  potions: number;
 }
 
 const freshVitals = (maxHp: number): MyVitals => ({
@@ -148,6 +152,7 @@ const freshVitals = (maxHp: number): MyVitals => ({
   cd: { Q: 0, E: 0, R: 0 },
   varcoCd: 0,
   lastHurt: 0,
+  potions: 0,
 });
 
 export interface TickCtx {
@@ -193,6 +198,9 @@ class CombatRuntime {
   }
 
   /** Nuova vita piena (inizio Frattura, checkpoint, ritorno al Crocevia, cambio classe). */
+  /** Bonus di talenti e oggetti del giocatore (li aggiorna LocalPlayer). */
+  mods: Mods = emptyMods();
+
   resetVitals(maxHp: number, keepUltra = false) {
     const ultra = keepUltra ? this.me.ultra : 0;
     const cd = this.me.cd;
@@ -222,7 +230,7 @@ class CombatRuntime {
   }
 
   addUltra(n: number) {
-    this.me.ultra = Math.min(ULTRA_MAX, this.me.ultra + n);
+    this.me.ultra = Math.min(ULTRA_MAX, this.me.ultra + n * (1 + this.mods.ultraPct));
   }
 
   number(x: number, y: number, z: number, v: number, kind: DmgNum['kind'], text?: string) {
@@ -243,6 +251,7 @@ class CombatRuntime {
     let dmg = raw;
     if (this.insideBarrier(this.selfPos.x, this.selfPos.z)) dmg *= 1 - AB.barriera.reduction;
     if (now < m.guardUntil) dmg *= 1 - AB.provocazione.reduction;
+    dmg *= 1 - this.mods.dmgReduction;
     if (m.shield > 0 && now < m.shieldUntil) {
       const absorbed = Math.min(m.shield, dmg);
       m.shield -= absorbed;
@@ -267,6 +276,19 @@ class CombatRuntime {
     const before = m.hp;
     m.hp = Math.min(m.maxHp, m.hp + amt);
     if (m.hp > before) this.number(this.selfPos.x, this.selfPos.y + 2.2, this.selfPos.z, m.hp - before, 'heal');
+  }
+
+  /** Pozione del Giardino: cura metà della vita. */
+  drinkPotion(): boolean {
+    const m = this.me;
+    if (m.potions <= 0 || !this.alive || m.hp >= m.maxHp) return false;
+    if (this.noHeals()) {
+      toast('In questa Frattura le cure non funzionano');
+      return false;
+    }
+    m.potions--;
+    this.healMe(m.maxHp * POTION_HEAL);
+    return true;
   }
 
   reviveMe(frac: number) {
@@ -413,7 +435,7 @@ class CombatRuntime {
           if (!this.alive) {
             this.reviveMe(AB.alba.reviveHp);
             toast('L’Alba ti rialza');
-          } else this.healMe(this.me.maxHp * AB.alba.heal);
+          } else this.healMe(this.me.maxHp * (msg.heal ?? AB.alba.heal));
         }
         break;
       case 'combo':

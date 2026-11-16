@@ -12,6 +12,7 @@ export type Action =
   | 'abE'
   | 'abR'
   | 'abF'
+  | 'potion'
   | 'emote0'
   | 'emote1'
   | 'emote2'
@@ -71,9 +72,15 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
     if (isTyping(e.target)) return;
     const s = getGame();
     if (e.code === 'Escape') {
-      if (s.classPicker || s.settingsOpen || s.helpOpen || s.dialog) {
-        setGame({ classPicker: false, settingsOpen: false, helpOpen: false, dialog: null });
+      if (s.classPicker || s.settingsOpen || s.helpOpen || s.dialog || s.panel) {
+        setGame({ classPicker: false, settingsOpen: false, helpOpen: false, dialog: null, panel: null });
       }
+      return;
+    }
+    if ((e.code === 'KeyP' || e.code === 'KeyI') && !e.repeat) {
+      const want = e.code === 'KeyP' ? 'personaggio' : 'zaino';
+      setGame({ panel: s.panel === want ? null : want, classPicker: false });
+      if (s.panel !== want) document.exitPointerLock?.();
       return;
     }
     if (e.code === 'KeyC' && !e.repeat) {
@@ -98,6 +105,7 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
     else if (e.code === 'KeyE') press('abE');
     else if (e.code === 'KeyR') press('abR');
     else if (e.code === 'KeyF') press('abF');
+    else if (e.code === 'KeyH') press('potion');
     else if (e.code >= 'Digit1' && e.code <= 'Digit4') press(`emote${Number(e.code.slice(5)) - 1}` as Action);
   };
   const onKeyUp = (e: KeyboardEvent) => input.keys.delete(e.code);

@@ -7,6 +7,7 @@ import { advanceDialog, setGame, updateSettings, useGame, type Quality } from '.
 import { getRoom } from '../net/room';
 import { StatsPanel, linkLabel } from './Stats';
 import { CombatHud } from './CombatHud';
+import { ProgressPanels } from './ProgressPanels';
 import { runRequest } from '../world/layout';
 
 export function Hud({ touch }: { touch: boolean }) {
@@ -32,6 +33,7 @@ export function Hud({ touch }: { touch: boolean }) {
       {classPicker && <ClassPicker />}
       {settingsOpen && <SettingsPanel />}
       {helpOpen && <HelpPanel touch={touch} />}
+      <ProgressPanels />
       {touch && <OrientationHint />}
     </div>
   );
@@ -109,6 +111,14 @@ function TopButtons({ touch }: { touch: boolean }) {
           Abbandona
         </button>
       )}
+      <button onClick={() => setGame((s) => ({ panel: s.panel === 'personaggio' ? null : 'personaggio' }))} title="Personaggio e talenti (P)">
+        <span aria-hidden>👤</span>
+        <span className="btn-label"> Personaggio</span>
+      </button>
+      <button onClick={() => setGame((s) => ({ panel: s.panel === 'zaino' ? null : 'zaino' }))} title="Zaino (I)">
+        <span aria-hidden>🎒</span>
+        <span className="btn-label"> Zaino</span>
+      </button>
       <button onClick={() => setGame((s) => ({ classPicker: !s.classPicker }))} title="Classe (C)">
         Classe
       </button>
@@ -301,6 +311,9 @@ function HelpPanel({ touch }: { touch: boolean }) {
     ['Ping “guarda qui”', 'Click centrale', 'Doppio tocco sul mondo'],
     ['Emote', '1 2 3 4', 'Pulsante emote'],
     ['Classe', 'C', 'Pulsante Classe in alto'],
+    ['Personaggio e talenti', 'P', 'Pulsante 👤'],
+    ['Zaino', 'I', 'Pulsante 🎒'],
+    ['Pozione', 'H', 'Pulsante 🧪'],
     ['Zoom', 'Rotella', '—'],
   ];
   return (

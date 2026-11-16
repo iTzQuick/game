@@ -12,6 +12,7 @@ import { generateDungeon, inRect, roomAt, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
 import { EnemySim, type Hit, type PlayerView } from './sim';
+import { FRAGMENTS, generateItem } from '../progress/defs';
 
 const TICK_MS = 33;
 const SNAP_HZ = 15;
@@ -61,11 +62,11 @@ export class HostDirector {
         x: msg.z.x,
         z: msg.z.z,
         r: msg.z.r,
-        pull: isC ? 12 : 7,
-        dps: isC ? 18 : 6,
+        pull: msg.z.pull ?? (isC ? 12 : 7),
+        dps: msg.z.dps ?? (isC ? 18 : 6),
         until: now + msg.z.dur,
         nextTick: now + 250,
-        final: isC ? { dmg: 80, r: 4.5 } : undefined,
+        final: isC ? { dmg: msg.z.finalDmg ?? 80, r: 4.5 } : undefined,
       });
     } else if (msg.t === 'runreq') this.onRunRequest(from, msg.a);
   }
@@ -222,8 +223,14 @@ export class HostDirector {
       }
       return;
     }
-    // stanza ripulita
+    // stanza ripulita: bottino per ognuno, deciso dall'host
     const last = run.fight === d.rooms.length - 1;
+    for (const id of room.admittedIds) {
+      const items = last
+        ? [generateItem(Math.random, run.grado, 2), generateItem(Math.random, run.grado)]
+        : [generateItem(Math.random, run.grado)];
+      emitCombat({ t: 'loot', items, frags: last ? FRAGMENTS.boss(run.grado) : FRAGMENTS.room(run.grado) }, { to: id });
+    }
     room.updateRoom((s) => {
       if (!s.run) return s;
       return {

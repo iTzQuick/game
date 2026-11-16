@@ -8,6 +8,7 @@ import { setGame, useGame } from '../game/store';
 import { CLASSES } from '../game/constants';
 import { abilityState } from '../combat/abilities';
 import { SLOTS, abilityName, usePoll } from './CombatHud';
+import { combat } from '../combat/runtime';
 
 const JOY_RADIUS = 56;
 const TOUCH_LOOK = 2.2;
@@ -135,6 +136,7 @@ export function TouchControls() {
           ⚔
         </button>
         <AbilityButtons />
+        <PotionButton />
         <button
           className="tbtn emote"
           onPointerDown={(e) => {
@@ -195,5 +197,24 @@ function AbilityButtons() {
         );
       })}
     </>
+  );
+}
+
+function PotionButton() {
+  usePoll(250);
+  const inRun = useGame((s) => !!s.room.run && s.room.run.phase !== 'countdown');
+  if (!inRun || combat.me.potions <= 0) return null;
+  return (
+    <button
+      className="tbtn potion"
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        press('potion');
+      }}
+      aria-label="Pozione"
+    >
+      🧪
+    </button>
   );
 }

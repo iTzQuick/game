@@ -5,6 +5,7 @@ import { displayName, getGame, openDialog, setGame, toast } from '../game/store'
 import { getRoom } from '../net/room';
 import { emitCombat } from '../combat/bus';
 import type { Dungeon } from '../combat/dungeon';
+import { BUILDINGS, BUILDING_RADIUS } from '../progress/defs';
 
 export const ISLAND_RADIUS = 22;
 export const PORTAL_RADIUS = 16.5;
@@ -107,6 +108,18 @@ export const INTERACTABLES: Interactable[] = [
       runRequest('start');
     },
   },
+  ...BUILDINGS.map<Interactable>((b) => ({
+    id: `edificio-${b.id}`,
+    x: Math.sin(b.angle) * (BUILDING_RADIUS - 2.6),
+    z: Math.cos(b.angle) * (BUILDING_RADIUS - 2.6),
+    radius: 2.8,
+    label: () => {
+      const st = getGame().room.base[b.id];
+      if (b.later) return `${b.name}: ${b.later}`;
+      return st?.u ? `${b.name}` : `${b.name}: ${st?.p ?? 0}/${b.cost} frammenti per costruirla`;
+    },
+    act: () => setGame({ panel: 'base', building: b.id }),
+  })),
   ...PORTALS.map<Interactable>((p) => ({
     id: `portale-${p.world.id}`,
     x: Math.sin(p.angle) * (PORTAL_RADIUS - 1.2),

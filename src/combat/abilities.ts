@@ -14,6 +14,35 @@ import { COMBO_NAMES, VF, type AbilitySlot, type CombatMsg } from './protocol';
 import { combat, showCombo, type EnemyView } from './runtime';
 import type { Hit } from './sim';
 import { EXECUTE_THRESHOLD } from './sim';
+import type { PerkKey } from '../progress/defs';
+
+// --- bonus di talenti e oggetti --------------------------------------------------------
+
+/** Potere speciale dei talenti (0 se non c'è). */
+const P = (k: PerkKey) => combat.mods.perks[k] ?? 0;
+
+function critChance(cls: ClassId | null): number {
+  return (cls === 'lama' ? 0.15 : 0.05) + combat.mods.critChance;
+}
+
+/** Danno con i bonus del giocatore e tiro del critico. */
+function scale(d: number, kind: 'basic' | 'ability', cls: ClassId | null, canCrit = true): { d: number; crit: boolean } {
+  const m = combat.mods;
+  let v = d * (1 + m.dmgPct) * (1 + (kind === 'basic' ? m.basicPct : m.abilityPct));
+  let crit = false;
+  if (canCrit && Math.random() < critChance(cls)) {
+    v *= 1.5 + m.critDmg;
+    crit = true;
+  }
+  return { d: Math.round(v), crit };
+}
+
+/** Ricarica dell'abilità con la riduzione dei talenti e degli oggetti. */
+function cooldownMs(cls: ClassId, slot: 'Q' | 'E' | 'R'): number {
+  return CLASS_STATS[cls].cd['QER'.indexOf(slot)] * 1000 * (1 - combat.mods.cdr);
+}
+
+let currentClass: ClassId | null = null;
 
 export interface PlayerCtx {
   id: string;
@@ -73,8 +102,9 @@ export function tickAbilities(ctx: PlayerCtx) {
   const m = combat.me;
   if (bastionPending && now >= m.bastionUntil) {
     bastionPending = false;
-    const dmg = AB.bastione.blastBase + AB.bastione.blastMul * m.bastionAbsorbed;
-    hitArea(ctx.x, ctx.z, AB.bastione.blastRadius, { d: dmg, noCharge: true });
+    const raw = (AB.bastione.blastBase + AB.bastione.blastMul * m.bastionAbsorbed) * (1 + P('bastioneEsplosione'));
+    const dmg = scale(raw, 'ability', ctx.cls, false).d;
+    hitArea(ctx.x, ctx.z, AB.bastione.blastRadius, { d: dmg, noCharge: true, raw: true });
     spawnFlash(ctx.x, ctx.z, '#ffd25a', AB.bastione.blastRadius, 0.5);
     emitAb(ctx, 'F', { to: [ctx.x, ctx.z] }, true);
     m.bastionAbsorbed = 0;
@@ -134,6 +164,8 @@ interface HitOpts {
   d: number;
   /** colpo della Ultra: non ricarica la Ultra */
   noCharge?: boolean;
+  /** danno già calcolato (niente bonus né critico) */
+  raw?: boolean;
   st?: number;
   tn?: number;
   mk?: number;
@@ -147,13 +179,19 @@ function hitEnemy(e: EnemyView, o: Omit<Hit, 'e'> & { crit?: boolean; noCharge?:
   if (o.d > 0) combat.number(e.x, 2.1, e.z, o.d, o.crit ? 'crit' : 'dmg');
 }
 
+function withBonus(o: HitOpts): HitOpts {
+  if (o.raw || o.d <= 0) return o;
+  const s = scale(o.d, 'ability', currentClass);
+  return { ...o, d: s.d, crit: o.crit || s.crit };
+}
+
 function hitArea(x: number, z: number, radius: number, o: HitOpts): EnemyView[] {
   const hit: EnemyView[] = [];
   for (const e of combat.enemies.values()) {
     if (!e.ready) continue;
     if (!o.includeVeiled && e.flags & EF.veiled && o.d === 0) continue;
     if (Math.hypot(e.x - x, e.z - z) <= radius + ENEMIES[e.type].radius) {
-      hitEnemy(e, o);
+      hitEnemy(e, withBonus(o));
       hit.push(e);
     }
   }
@@ -162,7 +200,7 @@ function hitArea(x: number, z: number, radius: number, o: HitOpts): EnemyView[] 
 
 function hitCone(x: number, z: number, yaw: number, range: number, arc: number, o: HitOpts): EnemyView[] {
   const hit = coneTargets(x, z, yaw, range, arc);
-  for (const e of hit) hitEnemy(e, o);
+  for (const e of hit) hitEnemy(e, withBonus(o));
   return hit;
 }
 
@@ -197,18 +235,17 @@ function consumeVeil(): boolean {
 
 /** Danno di un colpo della Lama (o di chiunque) con le regole delle combo. */
 function strike(ctx: PlayerCtx, e: EnemyView, base: number, fromVeil: boolean) {
-  let d = base * nextMul;
-  let crit = nextCrit;
+  const taunted = ctx.cls === 'lama' && (e.flags & EF.taunt) !== 0;
+  const s = scale(base, 'basic', ctx.cls, !taunted);
+  let d = s.d * nextMul;
+  let crit = nextCrit || s.crit;
   let execute = false;
   if (ctx.cls === 'lama') {
-    // Guardiano + Lama: la Provocazione gira il nemico, la Lama colpisce alle spalle
-    if (e.flags & EF.taunt) {
-      d *= 2;
+    // Guardiano + Lama: la Provocazione gira il nemico, la Lama colpisce alle spalle (critico garantito)
+    if (taunted) {
+      d *= Math.max(2, 1.5 + combat.mods.critDmg);
       crit = true;
       combo('spalle', 'guardiano');
-    } else if (Math.random() < 0.15) {
-      d *= 1.5;
-      crit = true;
     }
     // Custode + Lama: il Velo uccide in un colpo i nemici segnati e deboli
     if (fromVeil && e.flags & EF.mark && e.hp / e.maxHp <= EXECUTE_THRESHOLD) {
@@ -217,7 +254,7 @@ function strike(ctx: PlayerCtx, e: EnemyView, base: number, fromVeil: boolean) {
     }
   }
   if (fromVeil) {
-    d *= AB.velo.mul;
+    d *= AB.velo.mul + P('veloDanno');
     crit = true;
   }
   hitEnemy(e, { d: Math.round(d), crit, x: execute || undefined });
@@ -226,6 +263,7 @@ function strike(ctx: PlayerCtx, e: EnemyView, base: number, fromVeil: boolean) {
 // --- attacco base -----------------------------------------------------------------
 
 export function basicAttack(ctx: PlayerCtx, comboN: number) {
+  currentClass = ctx.cls;
   const stats = CLASS_STATS[ctx.cls ?? 'none'];
   const ranged = ctx.cls ? CLASSES[ctx.cls].ranged : false;
   const { yaw } = aimYaw(ctx, ranged ? stats.reach : stats.reach + 3);
@@ -235,7 +273,8 @@ export function basicAttack(ctx: PlayerCtx, comboN: number) {
   const fromVeil = consumeVeil();
 
   if (ranged) {
-    const mul = nextMul * (fromVeil ? AB.velo.mul : 1);
+    const mul = nextMul * (fromVeil ? AB.velo.mul + P('veloDanno') : 1);
+    const sc = scale(stats.basic[0], 'basic', ctx.cls);
     combat.bolts.push({
       x: ctx.x + Math.sin(yaw) * 0.6,
       z: ctx.z + Math.cos(yaw) * 0.6,
@@ -243,7 +282,7 @@ export function basicAttack(ctx: PlayerCtx, comboN: number) {
       dx: Math.sin(yaw),
       dz: Math.cos(yaw),
       spd: 26,
-      dmg: stats.basic[0],
+      dmg: sc.d,
       born: performance.now(),
       life: stats.reach / 26,
       mine: true,
@@ -254,7 +293,7 @@ export function basicAttack(ctx: PlayerCtx, comboN: number) {
       alive: true,
       portalCd: 0,
       mul,
-      crit: nextCrit || fromVeil,
+      crit: nextCrit || fromVeil || sc.crit,
     });
   } else {
     spawnSlash([ctx.x, ctx.y, ctx.z], yaw, color, comboN);
@@ -283,7 +322,7 @@ export function abilityState(cls: ClassId | null, slot: AbilitySlot, now: number
     const ready = m.ultra >= ULTRA_MAX && !!cls;
     return { slot, ready, left: 1 - m.ultra / ULTRA_MAX, seconds: 0 };
   }
-  const total = CLASS_STATS[cls ?? 'none'].cd['QER'.indexOf(slot)] * 1000;
+  const total = cls ? cooldownMs(cls, slot) : 0;
   const until = m.cd[slot];
   const left = Math.max(0, until - now);
   return { slot, ready: !!cls && left <= 0, left: total ? left / total : 0, seconds: Math.ceil(left / 1000) };
@@ -326,8 +365,9 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
   const st = abilityState(ctx.cls, slot, now);
   if (!st.ready || !combat.alive || !ctx.cls) return false;
   const m = combat.me;
+  currentClass = ctx.cls;
   if (slot === 'F') m.ultra = 0;
-  else m.cd[slot] = now + CLASS_STATS[ctx.cls].cd['QER'.indexOf(slot)] * 1000;
+  else m.cd[slot] = now + cooldownMs(ctx.cls, slot);
   const color = colorOf(ctx.cls);
   const key = `${ctx.cls}:${slot}` as const;
 
@@ -338,7 +378,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       ctx.setYaw(yaw);
       ctx.attackAnim(3);
       spawnSlash([ctx.x, ctx.y, ctx.z], yaw, '#9fc4ff', 2);
-      hitCone(ctx.x, ctx.z, yaw, AB.scudo.range, AB.scudo.arc, { d: AB.scudo.dmg, st: AB.scudo.stun });
+      hitCone(ctx.x, ctx.z, yaw, AB.scudo.range, AB.scudo.arc, { d: AB.scudo.dmg, st: AB.scudo.stun + P('scudoStordimento') });
       // Tessitore + Guardiano: la Trappola ammassa, il Colpo di scudo li stordisce tutti
       for (const z of combat.zones.values()) {
         if (z.kind === 'trappola' && Math.hypot(z.x - ctx.x, z.z - ctx.z) <= z.r + 3) {
@@ -351,22 +391,25 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       break;
     }
     case 'guardiano:E': {
-      hitArea(ctx.x, ctx.z, AB.provocazione.radius, { d: 0, tn: AB.provocazione.taunt, includeVeiled: true });
+      const radius = AB.provocazione.radius + P('provocazioneRaggio');
+      hitArea(ctx.x, ctx.z, radius, { d: 0, tn: AB.provocazione.taunt, includeVeiled: true });
       m.guardUntil = now + AB.provocazione.dur * 1000;
-      spawnRing(ctx.x, ctx.z, '#ff4d4d', AB.provocazione.radius, 0.6);
+      spawnRing(ctx.x, ctx.z, '#ff4d4d', radius, 0.6);
       emitAb(ctx, 'E');
       break;
     }
     case 'guardiano:R': {
-      emitCombat({ t: 'zone', z: { id: zoneId(), kind: 'barriera', owner: ctx.id, x: ctx.x, z: ctx.z, r: AB.barriera.radius, dur: AB.barriera.dur * 1000 } });
+      const r = AB.barriera.radius * (1 + P('barrieraRaggio'));
+      emitCombat({ t: 'zone', z: { id: zoneId(), kind: 'barriera', owner: ctx.id, x: ctx.x, z: ctx.z, r, dur: AB.barriera.dur * 1000 } });
       emitAb(ctx, 'R');
       break;
     }
     case 'guardiano:F': {
-      m.bastionUntil = now + AB.bastione.dur * 1000;
+      const dur = AB.bastione.dur + P('bastioneDurata');
+      m.bastionUntil = now + dur * 1000;
       m.bastionAbsorbed = 0;
       bastionPending = true;
-      hitArea(ctx.x, ctx.z, AB.bastione.tauntRadius, { d: 0, tn: AB.bastione.dur * 1000, includeVeiled: true });
+      hitArea(ctx.x, ctx.z, AB.bastione.tauntRadius, { d: 0, tn: dur * 1000, includeVeiled: true });
       spawnRing(ctx.x, ctx.z, '#ffd25a', AB.bastione.tauntRadius, 0.7);
       emitAb(ctx, 'F');
       break;
@@ -374,7 +417,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
 
     // ---------------- Lama d'Ombra ----------------
     case 'lama:Q': {
-      const target = ctx.autoAim ? findTarget(ctx, AB.scatto.behindRange) : null;
+      const target = ctx.autoAim ? findTarget(ctx, AB.scatto.behindRange + P('scattoDistanza')) : null;
       const from: [number, number] = [ctx.x, ctx.z];
       let to: [number, number];
       if (target) {
@@ -387,7 +430,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
         ctx.setYaw(yaw + Math.PI);
       } else {
         const yaw = Math.atan2(ctx.fx, ctx.fz);
-        const free = ctx.freeDistance(ctx.fx, ctx.fz, AB.scatto.dist);
+        const free = ctx.freeDistance(ctx.fx, ctx.fz, AB.scatto.dist + P('scattoDistanza'));
         to = [ctx.x + ctx.fx * free, ctx.z + ctx.fz * free];
         ctx.teleport(to[0], to[1]);
         ctx.setYaw(yaw);
@@ -399,7 +442,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       break;
     }
     case 'lama:E': {
-      for (let i = 0; i < AB.vortice.ticks; i++) {
+      for (let i = 0; i < AB.vortice.ticks + P('vorticeColpi'); i++) {
         later(i * AB.vortice.every * 1000, () => {
           const p = combat.selfPos;
           for (let k = 0; k < 3; k++) spawnSlash([p.x, p.y, p.z], (k / 3) * Math.PI * 2 + i, color, 2);
@@ -411,7 +454,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       break;
     }
     case 'lama:R': {
-      m.veilUntil = now + AB.velo.dur * 1000;
+      m.veilUntil = now + (AB.velo.dur + P('veloDurata')) * 1000;
       spawnPuff(ctx.x, ctx.y + 1, ctx.z, color);
       emitAb(ctx, 'R');
       break;
@@ -420,7 +463,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       const targets = [...combat.enemies.values()]
         .filter((e) => combat.targetable(e) && Math.hypot(e.x - ctx.x, e.z - ctx.z) <= AB.milleTagli.range)
         .sort((a, b) => Math.hypot(a.x - ctx.x, a.z - ctx.z) - Math.hypot(b.x - ctx.x, b.z - ctx.z))
-        .slice(0, AB.milleTagli.max);
+        .slice(0, AB.milleTagli.max + P('milleTagliBersagli'));
       m.invulnUntil = now + targets.length * AB.milleTagli.every * 1000 + 400;
       const path: [number, number][] = [];
       targets.forEach((t, i) => {
@@ -435,7 +478,8 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
           ctx.setYaw(yaw);
           ctx.attackAnim((i % 3) + 1);
           spawnSlash([bx, combat.selfPos.y, bz], yaw, color, (i % 3) + 1);
-          hitEnemy(e, { d: AB.milleTagli.dmg, crit: true, noCharge: true });
+          const sc = scale(AB.milleTagli.dmg, 'ability', 'lama');
+          hitEnemy(e, { d: sc.d, crit: true, noCharge: true });
         });
       });
       emitAb(ctx, 'F', { path });
@@ -447,19 +491,35 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       const yaw = Math.atan2(ctx.fx, ctx.fz);
       const a: [number, number] = [ctx.x + Math.sin(yaw) * 2, ctx.z + Math.cos(yaw) * 2];
       const b = aimPoint(ctx, AB.varco.dist, AB.varco.dist);
-      emitCombat({ t: 'zone', z: { id: zoneId(), kind: 'varco', owner: ctx.id, x: a[0], z: a[1], x2: b[0], z2: b[1], r: AB.varco.radius, dur: AB.varco.dur * 1000 } });
+      const dur = (AB.varco.dur + P('varcoDurata')) * 1000;
+      emitCombat({ t: 'zone', z: { id: zoneId(), kind: 'varco', owner: ctx.id, x: a[0], z: a[1], x2: b[0], z2: b[1], r: AB.varco.radius, dur } });
       emitAb(ctx, 'Q');
       break;
     }
     case 'tessitore:E': {
       const [x, z] = aimPoint(ctx, AB.trappola.dist, 8);
-      emitCombat({ t: 'zone', z: { id: zoneId(), kind: 'trappola', owner: ctx.id, x, z, r: AB.trappola.radius, dur: AB.trappola.dur * 1000 } });
+      const dmgMul = (1 + combat.mods.dmgPct) * (1 + combat.mods.abilityPct);
+      emitCombat({
+        t: 'zone',
+        z: {
+          id: zoneId(),
+          kind: 'trappola',
+          owner: ctx.id,
+          x,
+          z,
+          r: AB.trappola.radius * (1 + P('trappolaRaggio')),
+          dur: (AB.trappola.dur + P('trappolaDurata')) * 1000,
+          dps: AB.trappola.dps * dmgMul,
+          pull: AB.trappola.pull,
+        },
+      });
       ctx.attackAnim(1);
       emitAb(ctx, 'E');
       break;
     }
     case 'tessitore:R': {
       const { yaw } = aimYaw(ctx, 20);
+      const dardo = scale(AB.dardo.dmg, 'ability', ctx.cls);
       ctx.setYaw(yaw);
       ctx.attackAnim(1);
       combat.bolts.push({
@@ -469,25 +529,40 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
         dx: Math.sin(yaw),
         dz: Math.cos(yaw),
         spd: AB.dardo.speed,
-        dmg: AB.dardo.dmg,
+        dmg: dardo.d,
         born: now,
         life: 0.9,
         mine: true,
         color: '#b48cff',
         kind: 'dardo',
-        bounces: AB.dardo.bounces,
+        bounces: AB.dardo.bounces + P('dardoRimbalzi'),
         hit: new Set(),
         alive: true,
         portalCd: 0,
         mul: 1,
-        crit: false,
+        crit: dardo.crit,
       });
       emitAb(ctx, 'R', { r: yaw });
       break;
     }
     case 'tessitore:F': {
       const [x, z] = aimPoint(ctx, AB.collasso.dist, 9);
-      emitCombat({ t: 'zone', z: { id: zoneId(), kind: 'collasso', owner: ctx.id, x, z, r: AB.collasso.radius, dur: AB.collasso.dur * 1000 } });
+      const mul = (1 + combat.mods.dmgPct) * (1 + combat.mods.abilityPct) * (1 + P('collassoDanno'));
+      emitCombat({
+        t: 'zone',
+        z: {
+          id: zoneId(),
+          kind: 'collasso',
+          owner: ctx.id,
+          x,
+          z,
+          r: AB.collasso.radius,
+          dur: AB.collasso.dur * 1000,
+          dps: AB.collasso.dps * mul,
+          pull: AB.collasso.pull,
+          finalDmg: AB.collasso.final * mul,
+        },
+      });
       ctx.attackAnim(1);
       emitAb(ctx, 'F');
       break;
@@ -497,12 +572,13 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
     case 'custode:Q': {
       const target = nearestAlly(ctx, AB.raggio.range);
       const ticks = Math.round(AB.raggio.dur / AB.raggio.tick);
+      const heal = AB.raggio.heal * (1 + combat.mods.healPct) * (1 + P('raggioCura'));
       for (let i = 0; i < ticks; i++) {
         later(i * AB.raggio.tick * 1000, () => {
           if (!combat.alive) return;
-          if (target) emitCombat({ t: 'heal', to: target, amt: AB.raggio.heal }, { to: target });
-          else combat.healMe(AB.raggio.heal);
-          combat.addUltra(AB.raggio.heal * ULTRA_GAIN.healed);
+          if (target) emitCombat({ t: 'heal', to: target, amt: heal }, { to: target });
+          else combat.healMe(heal);
+          combat.addUltra(heal * ULTRA_GAIN.healed);
         });
       }
       const tp = target ? allyPos(target) : null;
@@ -512,20 +588,27 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       break;
     }
     case 'custode:E': {
-      hitArea(ctx.x, ctx.z, AB.rivelazione.radius, { d: 0, mk: AB.rivelazione.dur * 1000, includeVeiled: true });
+      hitArea(ctx.x, ctx.z, AB.rivelazione.radius, { d: 0, mk: (AB.rivelazione.dur + P('rivelazioneDurata')) * 1000, includeVeiled: true });
       spawnRing(ctx.x, ctx.z, '#ffe38a', AB.rivelazione.radius, 0.8);
       emitAb(ctx, 'E');
       break;
     }
     case 'custode:R': {
-      emitCombat({ t: 'bless', p: [ctx.x, ctx.z], r: AB.benedizione.radius, shield: AB.benedizione.shield, speed: AB.benedizione.speed, dur: AB.benedizione.dur });
+      emitCombat({
+        t: 'bless',
+        p: [ctx.x, ctx.z],
+        r: AB.benedizione.radius,
+        shield: AB.benedizione.shield * (1 + P('benedizioneScudo')),
+        speed: AB.benedizione.speed,
+        dur: AB.benedizione.dur,
+      });
       spawnRing(ctx.x, ctx.z, '#ffd86b', AB.benedizione.radius, 0.7);
       lightNearbyZones(ctx);
       emitAb(ctx, 'R');
       break;
     }
     case 'custode:F': {
-      emitCombat({ t: 'alba', p: [ctx.x, ctx.z], r: AB.alba.radius });
+      emitCombat({ t: 'alba', p: [ctx.x, ctx.z], r: AB.alba.radius, heal: AB.alba.heal * (1 + combat.mods.healPct) * (1 + P('albaCura')) });
       hitArea(ctx.x, ctx.z, AB.alba.blindRadius, { d: 0, st: AB.alba.blind, includeVeiled: true });
       spawnFlash(ctx.x, ctx.z, '#fff3b0', 14, 0.55);
       emitAb(ctx, 'F');

@@ -10,6 +10,7 @@ import { CLASSES, type ClassId } from '../game/constants';
 import { useGame, type Quality } from '../game/store';
 import { stone } from '../player/materials';
 import { ALTARS, ISLAND_RADIUS, PILLARS, PORTALS, RIFT, seeded } from './layout';
+import { Buildings } from './Buildings';
 
 /** Rumore ripetibile per posizione: i vertici condivisi restano attaccati. */
 function hash3(x: number, y: number, z: number): number {
@@ -51,6 +52,7 @@ export function Crocevia({ quality }: { quality: Quality }) {
         <Pillar key={i} {...p} />
       ))}
       <Rift />
+      <Buildings />
       <FloatingRocks count={quality === 'bassa' ? 14 : quality === 'media' ? 26 : 40} />
       <DistantRings />
     </group>

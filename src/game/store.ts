@@ -5,6 +5,8 @@
 import { create } from 'zustand';
 import type { ClassId } from './constants';
 import type { Member, RunState } from '../net/roomLogic';
+import type { BuildingId } from '../progress/defs';
+import type { BuildingState, GroupData } from '../progress/model';
 
 export type Quality = 'bassa' | 'media' | 'alta';
 export type LinkKind = 'local' | 'p2p' | 'relay' | 'connecting';
@@ -61,6 +63,9 @@ export interface RoomView {
   run: RunState | null;
   grado: number;
   best: number;
+  group: string | null;
+  base: Partial<Record<BuildingId, BuildingState>>;
+  gstats: GroupData['stats'];
 }
 
 interface GameStore {
@@ -81,7 +86,13 @@ interface GameStore {
   pointerLocked: boolean;
   /** Combo di coppia appena riuscita (striscione al centro dello schermo). */
   combo: { name: string; t0: number } | null;
+  /** Pannello della progressione aperto (personaggio, zaino, base…). */
+  panel: Panel;
+  /** Edificio scelto nel pannello della base. */
+  building: string | null;
 }
+
+export type Panel = 'personaggio' | 'zaino' | 'forgia' | 'base' | 'biblioteca' | 'trofei' | 'account' | null;
 
 const SETTINGS_KEY = 'fratture.settings';
 const NAME_KEY = 'fratture.name';
@@ -126,6 +137,9 @@ export const emptyRoom = (): RoomView => ({
   run: null,
   grado: 1,
   best: 0,
+  group: null,
+  base: {},
+  gstats: { fratture: 0, bosses: 0, kills: 0 },
 });
 
 export const useGame = create<GameStore>(() => ({
@@ -145,6 +159,8 @@ export const useGame = create<GameStore>(() => ({
   emotes: {},
   pointerLocked: false,
   combo: null,
+  panel: null,
+  building: null,
 }));
 
 export const setGame = useGame.setState;
@@ -219,7 +235,7 @@ export function advanceDialog() {
 /** True se un menu o un dialogo blocca i controlli del personaggio. */
 export function controlsBlocked(): boolean {
   const s = getGame();
-  return s.classPicker || s.settingsOpen || s.dialog !== null || s.helpOpen;
+  return s.classPicker || s.settingsOpen || s.dialog !== null || s.helpOpen || s.panel !== null;
 }
 
 export function displayName(id: string): string {
