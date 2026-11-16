@@ -216,6 +216,20 @@ async function fratturaTests(browser) {
   const cleared = await waitFor(C, () => window.__fratture.getGame().room.run?.cleared >= 2, null, 8000);
   check(cleared, 'stanza ripulita dopo il cambio di host: la porta si apre');
 
+  // tappa 5: esperienza e bottino (deciso dall'host) per ognuno
+  const gotLoot = await Promise.all([B, C].map((p) => waitFor(p, () => window.__fratture.getProgress().save.inventory.length > 0, null, 6000)));
+  check(gotLoot.every(Boolean), 'a stanza ripulita ognuno riceve il suo bottino');
+  const xp = await Promise.all(
+    [B, C].map((p) =>
+      g(p, () => {
+        const s = window.__fratture.getProgress().save;
+        const cls = window.__fratture.getGame().room.classes[window.__fratture.getGame().selfId];
+        return s.classes[cls] ? s.classes[cls].xp + s.classes[cls].level * 1000 : 0;
+      }),
+    ),
+  );
+  check(xp.every((x) => x > 1000), 'nemici e stanze danno esperienza alla classe in uso');
+
   // il boss: si salta alla stanza finale
   await g(B, () => {
     const r = window.__fratture.getRoom();
@@ -241,6 +255,8 @@ async function fratturaTests(browser) {
   const won = await waitFor(B, () => window.__fratture.getGame().room.run?.phase === 'complete', null, 8000);
   const grado = await g(B, () => window.__fratture.getGame().room.grado);
   check(won && grado === 2, `boss sconfitto: Frattura completata, il gruppo passa al Grado ${grado}`);
+  const trophies = await waitFor(C, () => window.__fratture.getGame().room.gstats.fratture >= 1, null, 5000);
+  check(trophies, 'la compagnia registra la Frattura richiusa (sala dei trofei)');
   await g(C, () => window.__fratture.runRequest('leave'));
   const home = await Promise.all([B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.run === null, null, 6000)));
   await sleep(600);

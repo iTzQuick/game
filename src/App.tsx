@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect } from 'react';
 import { leaveRoom } from './game/session';
 import { useGame } from './game/store';
 import { Menu } from './ui/Menu';
+import { initAccount } from './progress/store';
+
+void initAccount();
 
 // Il gioco 3D (three.js + fisica) è pesante: si carica a parte, così il menu
 // si apre subito anche sul telefono.

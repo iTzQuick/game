@@ -10,6 +10,8 @@ import { combatRoomCount } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
 import { press } from '../game/input';
+import { useProgress } from '../progress/store';
+import { classProgress } from '../progress/model';
 
 /** Ridisegna il componente ~10 volte al secondo (i valori vivono fuori da React). */
 export function usePoll(ms = 100) {
@@ -32,6 +34,7 @@ export function CombatHud({ touch }: { touch: boolean }) {
   const run = useGame((s) => s.room.run);
   const cls = useGame((s) => s.room.classes[s.selfId] ?? null);
   const combo = useGame((s) => s.combo);
+  const level = useProgress((s) => (cls ? classProgress(s.save, cls).level : 1));
   const inRun = !!run && run.phase !== 'countdown';
   const m = combat.me;
   const now = performance.now();
@@ -52,9 +55,10 @@ export function CombatHud({ touch }: { touch: boolean }) {
             <div className="hp-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
             {m.shield > 0 && now < m.shieldUntil && <div className="hp-shield" style={{ width: `${Math.min(1, m.shield / m.maxHp) * 100}%` }} />}
             <span>
-              {Math.ceil(m.hp)} / {m.maxHp}
+              Liv. {level} · {Math.ceil(m.hp)} / {m.maxHp}
             </span>
           </div>
+          {m.potions > 0 && <div className="potions">🧪 {m.potions}{!touch && <kbd>H</kbd>}</div>}
         </div>
       )}
       {!touch && cls && <AbilityBar cls={cls} />}

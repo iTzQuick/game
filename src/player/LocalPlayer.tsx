@@ -18,6 +18,8 @@ import { CLASS_STATS } from '../combat/defs';
 import { checkpoint, generateDungeon } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
+import { modsFor } from '../progress/store';
+import { isBuilt } from '../progress/model';
 import { Avatar, newPose, tickPose } from './Avatar';
 
 const CAPSULE_HALF = 0.5;
@@ -205,20 +207,31 @@ export function LocalPlayer() {
     const game = getGame();
     const run = game.room.run;
     const stats = CLASS_STATS[classId ?? 'none'];
+    // bonus di talenti e oggetti
+    const mods = modsFor(classId);
+    combat.mods = mods;
+    const maxHp = Math.round(stats.hp * (1 + mods.hpPct) + mods.hpFlat);
 
     // --- Crocevia ↔ Frattura, checkpoint, cambio classe ---
     const runKey = run && run.phase !== 'countdown' ? run.id : -1;
     if (sim.cls !== classId) {
       sim.cls = classId;
-      combat.resetVitals(stats.hp);
+      combat.resetVitals(maxHp);
+    } else if (combat.me.maxHp !== maxHp) {
+      // nuovo oggetto o talento: la vita segue in proporzione
+      const frac = combat.me.hp / Math.max(1, combat.me.maxHp);
+      combat.me.maxHp = maxHp;
+      if (combat.alive) combat.me.hp = Math.max(1, Math.round(maxHp * frac));
     }
     if (runKey !== sim.runKey) {
       const wasInRun = sim.runKey !== -1;
       sim.runKey = runKey;
       combat.clearWorld();
       resetAbilities();
-      combat.resetVitals(stats.hp);
+      combat.resetVitals(maxHp);
       if (run && runKey !== -1) {
+        // il Giardino della base regala una pozione a testa per ogni Frattura
+        combat.me.potions = isBuilt(game.room, 'giardino') ? 1 : 0;
         const d = generateDungeon(run.seed, run.grado);
         combat.dungeon = d;
         const startRoom = run.cleared <= 1 && run.fight < 0 && run.wipes === 0 ? 0 : run.cleared;
@@ -242,7 +255,9 @@ export function LocalPlayer() {
         const [x, y, z] = checkpoint(combat.dungeon, run.cleared);
         teleport(x, z, y);
         combat.clearWorld();
-        combat.resetVitals(stats.hp, true);
+        const potions = combat.me.potions;
+        combat.resetVitals(maxHp, true);
+        combat.me.potions = potions;
         toast('Siete caduti tutti: si riparte dal checkpoint');
       }
       if (run.cleared !== sim.cleared) {
@@ -329,7 +344,7 @@ export function LocalPlayer() {
     }
 
     const ranged = classId ? CLASSES[classId].ranged : false;
-    let speedTarget = stats.speed * combat.me.speedMul * wishLen;
+    let speedTarget = stats.speed * (1 + mods.speedPct) * combat.me.speedMul * wishLen;
     if (sim.dodgeLeft > 0) {
       sim.dodgeLeft -= dt;
       sim.vel.copy(sim.dodgeDir).multiplyScalar(MOVE.dodgeSpeed);
@@ -363,6 +378,12 @@ export function LocalPlayer() {
       ctx.z = sim.pos.z;
       ctx.yaw = sim.yaw;
       if (!castAbility(slot, ctx) && slot === 'F') toast('La Ultra non è ancora carica');
+    }
+
+    // pozione del Giardino
+    if (consume('potion') && alive && !blocked && inRun) {
+      if (combat.drinkPotion()) toast('Pozione: +50% vita');
+      else if (combat.me.potions <= 0) toast(isBuilt(game.room, 'giardino') ? 'Niente più pozioni in questa Frattura' : 'Le pozioni arrivano costruendo il Giardino');
     }
 
     // gravità

@@ -71,6 +71,8 @@ export function supabaseConfig(): { url: string; key: string } | null {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const EMPTY_BASE = {};
+const EMPTY_STATS = { fratture: 0, bosses: 0, kills: 0 };
 
 /**
  * Chi sparisce per poco (telefono in tasca, rete che cade) non perde subito la
@@ -303,6 +305,9 @@ export class RoomClient {
       cur.run === (st.run ?? null) &&
       cur.grado === (st.grado ?? 1) &&
       cur.best === (st.best ?? 0) &&
+      cur.group === (st.group ?? null) &&
+      cur.base === (st.base ?? EMPTY_BASE) &&
+      cur.gstats === (st.gstats ?? EMPTY_STATS) &&
       cur.members.length === admitted.length &&
       cur.members.every((m, i) => m.id === admitted[i].id && m.name === admitted[i].name) &&
       JSON.stringify(cur.peers) === JSON.stringify(peers);
@@ -314,6 +319,9 @@ export class RoomClient {
         run: st.run ?? null,
         grado: st.grado ?? 1,
         best: st.best ?? 0,
+        group: st.group ?? null,
+        base: st.base ?? EMPTY_BASE,
+        gstats: st.gstats ?? EMPTY_STATS,
         peers,
       });
     }

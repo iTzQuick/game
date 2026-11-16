@@ -5,6 +5,8 @@ import { generateRoomCode, normalizeRoomCode } from '../net/code';
 import { supabaseConfig } from '../net/room';
 import { joinRoom, roomFromUrl } from '../game/session';
 import { patchRoom, saveName, useGame } from '../game/store';
+import { AccountBox } from './AccountBox';
+import { reloadGuest } from '../progress/store';
 
 export function Menu() {
   const savedName = useGame((s) => s.selfName);
@@ -27,6 +29,7 @@ export function Menu() {
       return;
     }
     saveName(n.slice(0, 16));
+    reloadGuest();
     setErr(null);
     patchRoom({ error: undefined });
     setBusy(true);
@@ -86,6 +89,8 @@ export function Menu() {
             </button>
           </div>
         </div>
+
+        <AccountBox />
 
         {busy && <div className="loading">Il Crocevia vi sta chiamando…</div>}
         {err && <div className="error">{err}</div>}

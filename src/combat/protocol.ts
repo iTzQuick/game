@@ -2,6 +2,7 @@
 
 import type { ClassId } from '../game/constants';
 import type { Hit, SimEvent } from './sim';
+import type { BuildingId, Item } from '../progress/defs';
 
 type V2 = [number, number];
 
@@ -27,6 +28,11 @@ export interface ZoneSpec {
   /** durata in ms */
   dur: number;
   lit?: boolean;
+  /** danni al secondo e forza di risucchio (Trappola, Collasso), con i talenti */
+  dps?: number;
+  pull?: number;
+  /** colpo finale del Collasso */
+  finalDmg?: number;
 }
 
 export type AbilitySlot = 'Q' | 'E' | 'R' | 'F';
@@ -41,9 +47,14 @@ export type CombatMsg =
   | { t: 'ab'; cls: ClassId; a: AbilitySlot; p: [number, number, number]; r: number; to?: V2; path?: V2[]; tid?: string }
   | { t: 'heal'; to: string; amt: number }
   | { t: 'bless'; p: V2; r: number; shield: number; speed: number; dur: number }
-  | { t: 'alba'; p: V2; r: number }
+  | { t: 'alba'; p: V2; r: number; heal?: number }
   | { t: 'combo'; name: string; ids: string[] }
-  | { t: 'runreq'; a: 'start' | 'leave' | 'abandon' };
+  | { t: 'runreq'; a: 'start' | 'leave' | 'abandon' }
+  /** bottino deciso dall'host per un giocatore */
+  | { t: 'loot'; items: Item[]; frags: number }
+  /** frammenti versati in un edificio della base (al host) e conferma */
+  | { t: 'contrib'; b: BuildingId; n: number }
+  | { t: 'contribok'; b: BuildingId; used: number };
 
 /** Stati del giocatore inviati con la posizione. */
 export const VF = {

@@ -6,6 +6,8 @@
 
 import type { ClassId } from '../game/constants';
 import type { ModId } from '../combat/defs';
+import type { BuildingId } from '../progress/defs';
+import type { BuildingState, GroupData } from '../progress/model';
 
 export interface Member {
   id: string;
@@ -57,6 +59,12 @@ export interface RoomState {
   grado?: number;
   /** Grado più alto completato (la "classifica interna"). */
   best?: number;
+  /** Codice della compagnia di cui si usa la base. */
+  group?: string | null;
+  /** Edifici della base del Crocevia. */
+  base?: Partial<Record<BuildingId, BuildingState>>;
+  /** Imprese del gruppo (sala dei trofei, biblioteca). */
+  gstats?: GroupData['stats'];
 }
 
 export const emptyRoomState = (): RoomState => ({ v: 0, classes: {}, run: null, grado: 1, best: 0 });
