@@ -19,11 +19,15 @@ export function inviteLink(code: string): string {
 }
 
 function setUrlRoom(code: string | null) {
-  const url = new URL(location.href);
-  // conserva i parametri di sviluppo (rete=locale, p2p)
-  if (code) url.searchParams.set(ROOM_PARAM, code);
-  else url.searchParams.delete(ROOM_PARAM);
-  history.replaceState(null, '', url.toString());
+  try {
+    const url = new URL(location.href);
+    // conserva i parametri di sviluppo (rete=locale, p2p)
+    if (code) url.searchParams.set(ROOM_PARAM, code);
+    else url.searchParams.delete(ROOM_PARAM);
+    history.replaceState(null, '', url.toString());
+  } catch {
+    /* in alcune pagine incorporate l'URL non si può cambiare: si entra con il codice */
+  }
 }
 
 export async function joinRoom(code: string): Promise<boolean> {
