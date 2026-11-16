@@ -91,16 +91,21 @@ partita in una scheda e apri il link di invito in un'altra.
 
 ## Giocare online, da case diverse
 
-Serve un progetto Supabase (il piano gratuito basta) e un hosting statico qualsiasi.
+Il gioco è configurato per il progetto Supabase del gruppo (`.env.production`) e si
+pubblica da solo su GitHub Pages a ogni aggiornamento del ramo `main`
+(`.github/workflows/pages.yml`, dopo i test).
 
-1. Crea un progetto su [supabase.com](https://supabase.com). Non servono tabelle: per
-   ora si usa solo Realtime (Presence e Broadcast).
-2. Copia `.env.example` in `.env.local` e inserisci `VITE_SUPABASE_URL` e
-   `VITE_SUPABASE_ANON_KEY` (Project Settings → API). La chiave anon/publishable è
-   pubblica per natura. Non mettere mai qui la `service_role` né la chiave di Anthropic.
-3. In Supabase, Realtime deve accettare i canali pubblici (è l'impostazione predefinita).
-4. `npm run build` e pubblica la cartella `dist/` (Vercel, Netlify, Cloudflare Pages,
-   GitHub Pages…). La build usa percorsi relativi, quindi funziona anche in una sottocartella.
+- Indirizzo: **https://itzquick.github.io/game/**. Il link d'invito porta direttamente
+  nella stanza.
+- Serve una sola impostazione, da fare una volta: nel repo, *Settings → Pages → Source:
+  GitHub Actions*.
+- Su Supabase non servono tabelle: per ora si usa solo Realtime (Presence e Broadcast),
+  che deve accettare i canali pubblici (è l'impostazione predefinita).
+- La chiave in `.env.production` è quella *publishable*, pubblica per natura. Non mettere
+  mai lì la `sb_secret_…`/`service_role` né la chiave di Anthropic.
+
+Per usare un altro progetto Supabase basta cambiare i due valori in `.env.production`
+(o crearne una copia in `.env.local` per lo sviluppo).
 
 ### Come viaggiano i dati, e perché
 
@@ -138,7 +143,8 @@ npm run dev         # server di sviluppo
 npm run typecheck   # controllo dei tipi
 npm test            # test delle regole (stanza, host, classi, interpolazione)
 npm run build
-npm run test:e2e    # dopo la build: 4–5 giocatori veri in Chromium headless
+npm run test:e2e    # dopo la build: 4–5 giocatori in Chromium headless (modalità locale)
+npm run test:online # dopo la build: 3 browser separati sul Supabase vero, in WebRTC
 ```
 
 Parametri utili nell'URL:
