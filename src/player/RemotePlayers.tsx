@@ -9,6 +9,8 @@ import { addPing, getGame, showEmote, useGame } from '../game/store';
 import { spawnSlash } from '../fx/effects';
 import { remoteBolt } from '../combat/abilities';
 import { combat } from '../combat/runtime';
+import { onCombat } from '../combat/bus';
+import { abilityMove } from './moves';
 import { getRoom } from '../net/room';
 import { Avatar, newPose, tickPose, type Pose } from './Avatar';
 import { NEUTRAL } from './materials';
@@ -29,6 +31,19 @@ export function RemotePlayers() {
   const others = members.filter((m) => m.id !== selfId);
 
   // Eventi dalla rete → effetti e animazioni.
+  // le abilità degli altri: anche il loro corpo fa il movimento dell'abilità
+  useEffect(
+    () =>
+      onCombat((from, msg) => {
+        if (msg.t !== 'ab' || from === getGame().selfId) return;
+        const pose = poseOf(from);
+        pose.attackT = 0;
+        pose.attackN = 1;
+        pose.attackStyle = abilityMove(msg.cls, msg.a);
+      }),
+    [],
+  );
+
   useEffect(() => {
     const room = getRoom();
     if (!room) return;
@@ -41,6 +56,7 @@ export function RemotePlayers() {
           if (ev.a === 'attack') {
             pose.attackT = 0;
             pose.attackN = ev.n;
+            pose.attackStyle = cls && CLASSES[cls].ranged ? 'shoot' : 'swing';
             if (cls && CLASSES[cls].ranged) remoteBolt(cls, ev.p, ev.r);
             else spawnSlash(ev.p, ev.r, color, ev.n);
           } else {

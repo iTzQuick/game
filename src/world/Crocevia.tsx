@@ -58,6 +58,9 @@ export function Crocevia({ quality }: { quality: Quality }) {
         <Pillar key={i} {...p} />
       ))}
       <Rift />
+      {PORTALS.map((p) => (
+        <Brazier key={p.world.id} angle={p.angle + 0.32} quality={quality} />
+      ))}
       <Buildings />
       <FloatingRocks count={quality === 'bassa' ? 14 : quality === 'media' ? 26 : 40} />
       <DistantRings />
@@ -69,7 +72,7 @@ function Sky({ quality }: { quality: Quality }) {
   return (
     <>
       <color attach="background" args={['#07060d']} />
-      <fog attach="fog" args={['#140d24', 28, 125]} />
+      <fog attach="fog" args={['#111a30', 28, 125]} />
       <Stars radius={170} depth={50} count={quality === 'bassa' ? 1500 : 4000} factor={5} saturation={0.6} fade speed={0.4} />
       <SkyBand moonAt={[80, 95, -170]} />
       <Sparkles
@@ -78,8 +81,8 @@ function Sky({ quality }: { quality: Quality }) {
         position={[0, 4, 0]}
         size={2.4}
         speed={0.25}
-        opacity={0.55}
-        color="#b9a4ff"
+        opacity={0.6}
+        color="#ffdca0"
       />
     </>
   );
@@ -90,12 +93,13 @@ function Lights({ quality }: { quality: Quality }) {
   const size = quality === 'alta' ? 2048 : 1024;
   return (
     <>
-      <hemisphereLight args={['#6c5aa8', '#0a0612', 0.75]} />
-      <ambientLight intensity={0.18} color="#8d7fc4" />
+      {/* luna fredda e blu, non tutto viola; il caldo lo danno i bracieri */}
+      <hemisphereLight args={['#7d8fd2', '#140f1c', 0.8]} />
+      <ambientLight intensity={0.2} color="#a8b4e0" />
       <directionalLight
         position={[-18, 30, 12]}
-        intensity={1.5}
-        color="#c4ccff"
+        intensity={1.6}
+        color="#dde6ff"
         castShadow={shadows}
         shadow-mapSize-width={size}
         shadow-mapSize-height={size}
@@ -546,6 +550,44 @@ function DistantRings() {
           <meshBasicMaterial color={r.color} fog={false} transparent opacity={0.35} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+/** Un braciere acceso accanto a ogni portale: un po' di luce calda nella notte blu. */
+function Brazier({ angle, quality }: { angle: number; quality: Quality }) {
+  const r = 14.2;
+  const flame = useRef<THREE.Mesh>(null);
+  const light = useRef<THREE.PointLight>(null);
+  const flameMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    [],
+  );
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime * 7 + angle * 10;
+    const k = 0.85 + Math.sin(t) * 0.08 + Math.sin(t * 2.3) * 0.06;
+    if (flame.current) flame.current.scale.set(1, k * 1.1, 1);
+    if (light.current) light.current.intensity = 7 * k;
+  });
+  return (
+    <group position={[Math.sin(angle) * r, 0, Math.cos(angle) * r]}>
+      <RigidBody type="fixed" colliders={false}>
+        <CylinderCollider args={[0.55, 0.45]} position={[0, 0.55, 0]} />
+      </RigidBody>
+      <mesh material={stone('#4b4a5a')} position={[0, 0.45, 0]} castShadow>
+        <cylinderGeometry args={[0.28, 0.4, 0.9, 7]} />
+      </mesh>
+      <mesh material={stone('#3a3946')} position={[0, 1, 0]} castShadow>
+        <cylinderGeometry args={[0.55, 0.32, 0.3, 8]} />
+      </mesh>
+      <mesh ref={flame} material={flameMat} position={[0, 1.45, 0]}>
+        <coneGeometry args={[0.32, 0.9, 8]} />
+      </mesh>
+      <mesh position={[0, 1.3, 0]}>
+        <sphereGeometry args={[0.22, 8, 6]} />
+        <meshBasicMaterial color="#fff1c2" />
+      </mesh>
+      {quality !== 'bassa' && <pointLight ref={light} position={[0, 1.8, 0]} color="#ff9a3c" intensity={7} distance={9} decay={1.6} />}
     </group>
   );
 }

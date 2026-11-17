@@ -5,6 +5,7 @@
 // ricevono un messaggio 'ab' e vedono l'effetto.
 
 import { CLASSES, type ClassId } from '../game/constants';
+import { abilityMove, type MoveStyle } from '../player/moves';
 import { getGame } from '../game/store';
 import { getRoom } from '../net/room';
 import { spawnFlash, spawnPuff, spawnRing, spawnSlash, addBeam } from '../fx/effects';
@@ -60,7 +61,8 @@ export interface PlayerCtx {
   teleport: (x: number, z: number) => void;
   autoAim: boolean;
   /** Animazioni del personaggio. */
-  attackAnim: (n: number) => void;
+  /** animazione d'attacco: numero del colpo e movimento del corpo (player/moves.ts) */
+  attackAnim: (n: number, style?: MoveStyle) => void;
 }
 
 const colorOf = (cls: ClassId | null) => (cls ? CLASSES[cls].color : '#8a8496');
@@ -368,6 +370,8 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
   currentClass = ctx.cls;
   if (slot === 'F') m.ultra = 0;
   else m.cd[slot] = now + cooldownMs(ctx.cls, slot);
+  // ogni abilità ha il suo movimento del corpo
+  ctx.attackAnim(1, abilityMove(ctx.cls, slot));
   const color = colorOf(ctx.cls);
   const key = `${ctx.cls}:${slot}` as const;
 
@@ -376,7 +380,6 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
     case 'guardiano:Q': {
       const { yaw } = aimYaw(ctx, AB.scudo.range + 2);
       ctx.setYaw(yaw);
-      ctx.attackAnim(3);
       spawnSlash([ctx.x, ctx.y, ctx.z], yaw, '#9fc4ff', 2);
       hitCone(ctx.x, ctx.z, yaw, AB.scudo.range, AB.scudo.arc, { d: AB.scudo.dmg, st: AB.scudo.stun + P('scudoStordimento') });
       // Tessitore + Guardiano: la Trappola ammassa, il Colpo di scudo li stordisce tutti
@@ -449,7 +452,6 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
           hitArea(p.x, p.z, AB.vortice.radius, { d: AB.vortice.dmg });
         });
       }
-      ctx.attackAnim(2);
       emitAb(ctx, 'E');
       break;
     }
@@ -476,7 +478,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
           const bz = e.z - Math.cos(yaw) * (ENEMIES[e.type].radius + 0.9);
           ctx.teleport(bx, bz);
           ctx.setYaw(yaw);
-          ctx.attackAnim((i % 3) + 1);
+          ctx.attackAnim((i % 3) + 1, i % 3 === 2 ? 'spin' : 'swing');
           spawnSlash([bx, combat.selfPos.y, bz], yaw, color, (i % 3) + 1);
           const sc = scale(AB.milleTagli.dmg, 'ability', 'lama');
           hitEnemy(e, { d: sc.d, crit: true, noCharge: true });
@@ -513,7 +515,6 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
           pull: AB.trappola.pull,
         },
       });
-      ctx.attackAnim(1);
       emitAb(ctx, 'E');
       break;
     }
@@ -521,7 +522,6 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       const { yaw } = aimYaw(ctx, 20);
       const dardo = scale(AB.dardo.dmg, 'ability', ctx.cls);
       ctx.setYaw(yaw);
-      ctx.attackAnim(1);
       combat.bolts.push({
         x: ctx.x + Math.sin(yaw) * 0.6,
         z: ctx.z + Math.cos(yaw) * 0.6,
@@ -563,7 +563,6 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
           finalDmg: AB.collasso.final * mul,
         },
       });
-      ctx.attackAnim(1);
       emitAb(ctx, 'F');
       break;
     }

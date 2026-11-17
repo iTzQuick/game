@@ -21,7 +21,8 @@ registerModels({
       file: 'guardiano.glb', height: 1.85, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5, attackSpeed: 1.5,
       gear: [
         { bone: 'RightHand', pos: [-0.032, -0.067, 0.03], rot: FORWARD, node: weapon('spada', -0.12, <Sword />) },
-        { bone: 'LeftForeArm', pos: [0.09, -0.085, 0.12], rot: [0, 0.35, 0], node: weapon('scudo', -0.31, <Shield />) },
+        // legato sul lato esterno dell'avambraccio, rivolto in fuori e un po' in avanti: il braccio non lo attraversa
+        { bone: 'LeftForeArm', pos: [0.151, -0.06, 0.043], rot: [-1.372, 0.829, 1.199], node: weapon('scudo', -0.31, <Shield />) },
       ],
     },
     lama: {
