@@ -22,6 +22,16 @@ import { emitCombat } from '../combat/bus';
 import { modsFor } from '../progress/store';
 import { isBuilt } from '../progress/model';
 import { Avatar, newPose, tickPose } from './Avatar';
+import type { MoveStyle } from './moves';
+
+/** Fascio della telecamera: scarti laterali e verticali (metri) dal punto guardato. */
+const CAM_RAYS: [number, number][] = [
+  [0, 0],
+  [0.45, 0],
+  [-0.45, 0],
+  [0, 0.35],
+  [0, -0.3],
+];
 
 /** Ultimo avviso "la missione vieta le pozioni". */
 let potionWarnAt = 0;
@@ -41,6 +51,8 @@ export interface LocalDebug {
   teleport?: (x: number, z: number) => void;
   /** Solo per i test automatici e le foto: gira la telecamera. */
   setCamYaw?: (yaw: number) => void;
+  /** Solo per i test e le foto: telecamera (rotazione, inclinazione, distanza). */
+  setCam?: (c: { yaw?: number; pitch?: number; dist?: number; heroYaw?: number }) => void;
 }
 
 /** Accesso per i test end-to-end e le statistiche. */
@@ -58,6 +70,8 @@ export function LocalPlayer() {
   const selfName = useGame((s) => s.selfName);
   const classId = useGame((s) => s.room.classes[s.selfId] ?? null);
   const sensitivity = useGame((s) => s.settings.sensitivity);
+  const inRunView = useGame((s) => !!s.room.run);
+  const quality = useGame((s) => s.settings.quality);
 
   const group = useRef<THREE.Group>(null);
   const pose = useMemo(newPose, []);
@@ -185,9 +199,11 @@ export function LocalPlayer() {
         ctx.x = x;
         ctx.z = z;
       },
-      attackAnim: (n: number) => {
+      attackAnim: (n: number, style?: MoveStyle) => {
         pose.attackT = 0;
         pose.attackN = n;
+        const cls = getGame().room.classes[getGame().selfId];
+        pose.attackStyle = style ?? (cls && CLASSES[cls].ranged ? 'shoot' : 'swing');
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,6 +212,12 @@ export function LocalPlayer() {
 
   useEffect(() => {
     localDebug.teleport = (x, z) => ctx.teleport(x, z);
+    localDebug.setCam = (c) => {
+      if (c.yaw !== undefined) sim.camYaw = c.yaw;
+      if (c.pitch !== undefined) sim.camPitch = c.pitch;
+      if (c.dist !== undefined) sim.camDist = c.dist;
+      if (c.heroYaw !== undefined) sim.yaw = c.heroYaw;
+    };
     localDebug.setCamYaw = (yaw) => {
       sim.camYaw = yaw;
     };
@@ -470,11 +492,17 @@ export function LocalPlayer() {
     tmp.target.set(sim.pos.x, sim.pos.y + 1.55, sim.pos.z);
     const cosP = Math.cos(sim.camPitch);
     tmp.desiredCam.set(Math.sin(sim.camYaw) * cosP, Math.sin(sim.camPitch), Math.cos(sim.camYaw) * cosP);
+    // non un raggio solo ma un fascio (centro e quattro lati): le colonne e i muri non
+    // finiscono davanti all'obiettivo, e la telecamera si ferma un po' prima
     let dist = sim.camDist;
-    tmp.ray.origin = { x: tmp.target.x, y: tmp.target.y, z: tmp.target.z };
-    tmp.ray.dir = { x: tmp.desiredCam.x, y: tmp.desiredCam.y, z: tmp.desiredCam.z };
-    const hit = world.castRay(tmp.ray, dist, true, undefined, undefined, c);
-    if (hit) dist = Math.max(1.2, hit.timeOfImpact - 0.25);
+    const rx = Math.cos(sim.camYaw);
+    const rz = -Math.sin(sim.camYaw);
+    for (const [ox, oy] of CAM_RAYS) {
+      tmp.ray.origin = { x: tmp.target.x + rx * ox, y: tmp.target.y + oy, z: tmp.target.z + rz * ox };
+      tmp.ray.dir = { x: tmp.desiredCam.x, y: tmp.desiredCam.y, z: tmp.desiredCam.z };
+      const hit = world.castRay(tmp.ray, dist, true, undefined, undefined, c);
+      if (hit) dist = Math.max(1.2, hit.timeOfImpact - 0.45);
+    }
     tmp.desiredCam.multiplyScalar(dist).add(tmp.target);
     if (sim.camPos.lengthSq() === 0 || sim.camPos.distanceTo(tmp.desiredCam) > 25) sim.camPos.copy(tmp.desiredCam);
     sim.camPos.lerp(tmp.desiredCam, 1 - Math.exp(-20 * dt));
@@ -553,6 +581,8 @@ export function LocalPlayer() {
   return (
     <group ref={group}>
       <Avatar pose={pose} classId={classId} playerId={selfId} name={selfName} isSelf />
+      {/* nella Frattura una luce morbida segue l'eroe: non diventa una sagoma scura */}
+      {inRunView && quality !== 'bassa' && <pointLight position={[0, 3.2, 1.6]} color="#fff1dc" intensity={5} distance={9} decay={1.5} />}
     </group>
   );
 }

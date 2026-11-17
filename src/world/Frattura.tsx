@@ -43,11 +43,11 @@ export function Frattura({ quality }: { quality: Quality }) {
       ) : (
         <>
           <color attach="background" args={['#05040a']} />
-          <fog attach="fog" args={['#0d0818', 18, 70]} />
+          <fog attach="fog" args={['#0c1222', 18, 70]} />
           <Stars radius={120} depth={40} count={quality === 'bassa' ? 800 : 2000} factor={4} fade speed={0.3} />
           <SkyBand dim={0.45} />
-          <hemisphereLight args={['#5a4a90', '#08040e', 0.8]} />
-          <ambientLight intensity={0.2} color="#8d7fc4" />
+          <hemisphereLight args={['#7180c0', '#0c0a14', 0.85]} />
+          <ambientLight intensity={0.22} color="#a2aad6" />
         </>
       )}
       <directionalLight

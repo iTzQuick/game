@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { ClassId } from '../game/constants';
 import type { EnemyType } from '../combat/defs';
+import { MOVE_DURATION, bodyOffset, dodgeOffset, type MoveStyle } from './moves';
 
 export type Move = 'idle' | 'run' | 'down';
 
@@ -30,6 +31,8 @@ export interface ModelDef {
   rigid?: boolean;
   /** altezza da terra della base del modello (per chi vola) */
   lift?: number;
+  /** eroi: il corpo fa i movimenti di attacchi e abilità (player/moves.ts) */
+  moves?: boolean;
 }
 
 /**
@@ -59,11 +62,18 @@ export interface ModelCtrl {
   charge: number;
   /** 1 = pieno; meno di 1 = trasparente (i Velati sotto il velo) */
   opacity: number;
+  /** movimento del corpo dell'ultimo attacco e numero del colpo nella combo */
+  style: MoveStyle;
+  combo: number;
 }
 
-export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0, opacity: 1 });
+export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0, opacity: 1, style: 'swing', combo: 1 });
 
 const url = (file: string) => `${import.meta.env.BASE_URL}models/${file}`;
+
+type ActionKey = 'idle' | 'run' | 'attack' | 'down' | 'attackUpper' | 'runLower';
+/** Ossa della parte alta (scheletro Meshy): busto, collo, testa, spalle e braccia. */
+const UPPER_BODY = /Spine|neck|Neck|Head|Shoulder|Arm|Hand/;
 
 /** Quali modelli sono pronti e quali hanno dato errore (si vede nelle statistiche). */
 export const modelStatus = {
@@ -110,7 +120,7 @@ export function registerModels(m: {
   props?: Record<string, Omit<PropDef, 'url'> & { file: string }>;
 }) {
   if (!MODELS_ENABLED) return;
-  for (const [k, v] of Object.entries(m.heroes ?? {})) if (v) HERO_MODELS[k as ClassId] = { ...v, url: url(v.file) };
+  for (const [k, v] of Object.entries(m.heroes ?? {})) if (v) HERO_MODELS[k as ClassId] = { moves: true, ...v, url: url(v.file) };
   for (const [k, v] of Object.entries(m.enemies ?? {})) if (v) ENEMY_MODELS[k as EnemyType] = { ...v, url: url(v.file) };
   for (const [k, v] of Object.entries(m.props ?? {})) PROP_MODELS[k] = { ...v, url: url(v.file) };
 }
@@ -147,33 +157,48 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       mesh.material = Array.isArray(mesh.material) ? cloned : cloned[0];
     });
     const mixer = new THREE.AnimationMixer(scene);
-    const actions: Partial<Record<'idle' | 'run' | 'attack' | 'down', THREE.AnimationAction>> = {};
+    const actions: Partial<Record<ActionKey, THREE.AnimationAction>> = {};
+    const once = (a: THREE.AnimationAction) => {
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+      return a;
+    };
     for (const [key, name] of Object.entries(def.clips)) {
       const clip = gltf.animations.find((a) => a.name === name);
       if (!clip) continue;
       const a = mixer.clipAction(clip);
-      if (key === 'attack' || key === 'down') {
-        a.setLoop(THREE.LoopOnce, 1);
-        a.clampWhenFinished = true;
-      }
-      actions[key as keyof typeof actions] = a;
+      if (key === 'attack' || key === 'down') once(a);
+      actions[key as ActionKey] = a;
+    }
+    // attacco in corsa: le gambe continuano a correre e il busto colpisce
+    // (due clip senza ossa in comune, così ognuna muove le sue al 100%)
+    const atk = actions.attack?.getClip();
+    const run = actions.run?.getClip();
+    if (atk && run) {
+      const upper = (t: THREE.KeyframeTrack) => UPPER_BODY.test(t.name.split('.')[0]);
+      actions.attackUpper = once(mixer.clipAction(new THREE.AnimationClip('attackUpper', atk.duration, atk.tracks.filter(upper))));
+      actions.runLower = mixer.clipAction(new THREE.AnimationClip('runLower', run.duration, run.tracks.filter((t) => !upper(t))));
     }
     const place = fit(gltf.scene, def.height);
     return { scene, mats, mixer, actions, place, anchors: anchorGear(scene, def.gear ?? [], place.scale) };
   }, [gltf, def]);
 
   const roll = useRef<THREE.Group>(null);
-  const state = useRef<{ current: THREE.AnimationAction | null; attack: number; attackUntil: number; opacity: number }>({
-    current: null,
+  const act = useRef<THREE.Group>(null);
+  const state = useRef({
+    active: new Set<THREE.AnimationAction>(),
     attack: 0,
     attackUntil: 0,
+    attackStart: 0,
+    style: 'swing' as MoveStyle,
+    combo: 1,
     opacity: 1,
   });
 
   useEffect(() => {
-    const start = actions.idle ?? Object.values(actions)[0];
+    const start = actions.idle ?? actions.run;
     start?.play();
-    state.current.current = start ?? null;
+    state.current.active = new Set(start ? [start] : []);
     state.current.attack = ctrl.attack;
     onReady?.();
     return () => {
@@ -186,37 +211,67 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     const dt = Math.min(dtRaw, 0.1);
     const st = state.current;
     const now = performance.now();
-    let want: THREE.AnimationAction | undefined;
     if (ctrl.attack !== st.attack && actions.attack) {
       st.attack = ctrl.attack;
-      const a = actions.attack;
-      a.reset();
-      a.timeScale = def.attackSpeed ?? 1.6; // i clip della libreria sono lenti per un gioco d'azione
-      st.attackUntil = now + (a.getClip().duration / a.timeScale) * 1000 * 0.9;
+      st.attackStart = now;
+      st.style = ctrl.style;
+      st.combo = ctrl.combo;
+      const speed = def.attackSpeed ?? 1.6; // i clip della libreria sono lenti per un gioco d'azione
+      for (const a of [actions.attack, actions.attackUpper]) {
+        if (!a) continue;
+        a.reset();
+        a.timeScale = speed;
+        if (st.active.has(a)) a.setEffectiveWeight(1);
+      }
+      st.attackUntil = now + (actions.attack.getClip().duration / speed) * 1000 * 0.9;
     }
-    if (ctrl.move === 'down' && actions.down) want = actions.down;
-    else if (now < st.attackUntil && actions.attack) want = actions.attack;
-    else if (ctrl.move === 'run' && actions.run) want = actions.run;
-    else want = actions.idle ?? actions.run;
+    const attacking = now < st.attackUntil && !!actions.attack;
+    const moving = ctrl.move === 'run' && !!actions.run;
+    let want: (THREE.AnimationAction | undefined)[];
+    if (ctrl.move === 'down' && actions.down) want = [actions.down];
+    else if (attacking && moving && actions.attackUpper && actions.runLower) want = [actions.runLower, actions.attackUpper];
+    else if (attacking) want = [actions.attack];
+    else if (moving) want = [actions.run];
+    else want = [actions.idle ?? actions.run];
 
-    if (want && want !== st.current) {
-      want.reset().play();
-      if (st.current) want.crossFadeFrom(st.current, 0.15, false);
-      st.current = want;
+    // dissolvenze tra i clip; le gambe non saltano passando tra corsa intera e corsa "solo gambe"
+    for (const a of Object.values(actions)) {
+      if (!a) continue;
+      const on = want.includes(a);
+      if (on && !st.active.has(a)) {
+        const keepTime = a === actions.runLower ? actions.run : a === actions.run ? actions.runLower : null;
+        const isAttack = a === actions.attack || a === actions.attackUpper;
+        if (!isAttack) a.reset();
+        else {
+          a.enabled = true;
+          a.stopFading();
+        }
+        if (keepTime && st.active.has(keepTime)) a.time = keepTime.time;
+        a.setEffectiveWeight(1).fadeIn(0.15).play();
+        st.active.add(a);
+      } else if (!on && st.active.has(a)) {
+        a.fadeOut(0.15);
+        st.active.delete(a);
+      }
     }
-    if (actions.run) actions.run.timeScale = Math.max(0.6, Math.min(1.6, ctrl.speed / (def.runSpeed ?? 6)));
+    const runScale = Math.max(0.6, Math.min(1.6, ctrl.speed / (def.runSpeed ?? 6)));
+    if (actions.run) actions.run.timeScale = runScale;
+    if (actions.runLower) actions.runLower.timeScale = runScale;
     mixer.update(dt);
 
     if (roll.current) {
       roll.current.visible = ctrl.visible;
-      if (ctrl.roll >= 0) {
-        const k = 1 - (1 - ctrl.roll) * (1 - ctrl.roll);
-        roll.current.rotation.x = k * Math.PI * 2;
-        roll.current.position.y = def.height * 0.45 + Math.sin(ctrl.roll * Math.PI) * 0.25;
-      } else {
-        roll.current.rotation.x = 0;
-        roll.current.position.y = def.height * 0.45;
-      }
+      roll.current.rotation.x = 0;
+      roll.current.position.y = def.height * 0.45;
+    }
+    // movimenti del corpo: attacchi e abilità diversi, e la schivata come scatto basso
+    if (act.current) {
+      const g = act.current;
+      const o = def.moves && st.attackStart ? bodyOffset(st.style, st.combo, (now - st.attackStart) / 1000 / MOVE_DURATION[st.style]) : null;
+      const d = ctrl.roll >= 0 ? dodgeOffset(ctrl.roll) : null;
+      g.rotation.set((o?.rx ?? 0) + (d?.rx ?? 0), o?.ry ?? 0, 0);
+      g.position.set(0, (o?.y ?? 0) + (d?.y ?? 0), o?.z ?? 0);
+      g.scale.setScalar((o?.s ?? 1) * (d?.s ?? 1));
     }
     // trasparenza (Velati): si accende solo quando serve, per non pesare sugli altri
     if (ctrl.opacity < 1 || st.opacity < 1) {
@@ -248,8 +303,10 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
   // il gruppo "roll" ruota attorno al bacino (a metà altezza), il modello sotto è spostato di conseguenza
   return (
     <group ref={roll} position={[0, def.height * 0.45, 0]}>
-      <group position={[0, place.y - def.height * 0.45 + (def.lift ?? 0), 0]} rotation={[0, def.yaw ?? 0, 0]} scale={place.scale}>
-        <primitive object={scene} />
+      <group ref={act}>
+        <group position={[0, place.y - def.height * 0.45 + (def.lift ?? 0), 0]} rotation={[0, def.yaw ?? 0, 0]} scale={place.scale}>
+          <primitive object={scene} />
+        </group>
       </group>
       {anchors.map((a, i) => (
         <Fragment key={i}>
