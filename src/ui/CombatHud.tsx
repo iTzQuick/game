@@ -13,6 +13,7 @@ import { press } from '../game/input';
 import { Icon } from './Icon';
 import { useProgress } from '../progress/store';
 import { classProgress } from '../progress/model';
+import { SOMMERSA } from '../story/core';
 
 /** Ridisegna il componente ~10 volte al secondo (i valori vivono fuori da React). */
 export function usePoll(ms = 100) {
@@ -91,7 +92,7 @@ function RunCountdown() {
   const left = Math.max(1, Math.ceil((5000 - (performance.now() - seenAt.current)) / 1000));
   return (
     <div className="run-countdown">
-      <b>La Frattura si apre</b>
+      <b>{run.world === SOMMERSA ? 'La Città Sommersa si apre' : 'La Frattura si apre'}</b>
       <span className="count">{left}</span>
       <small>
         Grado {run.grado}
@@ -131,7 +132,7 @@ function RunLine() {
   return (
     <div className="run-info">
       <span>
-        Grado {run.grado} · {run.phase === 'complete' ? 'completata' : bossFight ? 'boss' : `stanze ${done}/${total}`}
+        {run.world === SOMMERSA ? 'Città Sommersa · ' : ''}Grado {run.grado} · {run.phase === 'complete' ? 'completata' : bossFight ? 'boss' : `stanze ${done}/${total}`}
         {run.fight >= 0 && run.phase !== 'complete' && <em> · combattimento</em>}
       </span>
       {run.mods.map((m) => (

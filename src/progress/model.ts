@@ -1,6 +1,7 @@
 // Salvataggi e regole della progressione. Tutto puro: si testa senza browser.
 
 import type { ClassId } from '../game/constants';
+import { normalizeStory, type StoryState } from '../story/core';
 import {
   BUILDINGS,
   INVENTORY_SIZE,
@@ -238,6 +239,8 @@ export interface GroupData {
   stats: { fratture: number; bosses: number; kills: number };
   /** diario del gruppo: lo userà il narratore (tappa 6) */
   diario: { at: number; text: string }[];
+  /** missioni: capitolo e giornaliere (tappa 6) */
+  storia?: StoryState;
 }
 
 export const emptyGroup = (): GroupData => ({
@@ -262,6 +265,7 @@ export function normalizeGroup(raw: unknown): GroupData {
     base: { ...(r.base ?? {}) },
     stats: { ...base.stats, ...(r.stats ?? {}) },
     diario: Array.isArray(r.diario) ? r.diario.slice(-100) : [],
+    storia: r.storia ? normalizeStory(r.storia) : undefined,
   };
 }
 

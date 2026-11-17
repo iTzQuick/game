@@ -10,6 +10,7 @@ import { CombatHud, TopStatus } from './CombatHud';
 import { Icon } from './Icon';
 import { ProgressPanels } from './ProgressPanels';
 import { runRequest } from '../world/layout';
+import { MissionTracker } from './Missions';
 
 export function Hud({ touch }: { touch: boolean }) {
   const showStats = useGame((s) => s.settings.showStats);
@@ -25,7 +26,8 @@ export function Hud({ touch }: { touch: boolean }) {
       {/* a sinistra: stanza, poi i messaggi (bottino, esperienza…) piccoli */}
       <div className="top-left">
         <RoomPanel />
-        <Toasts />
+        <MissionTracker compact={touch} />
+        <Toasts max={touch ? 2 : 3} />
         {showStats && <StatsPanel />}
       </div>
       <TopButtons touch={touch} />
@@ -151,6 +153,9 @@ function SideButtons() {
       <button className="icon-btn" onClick={() => setGame((s) => ({ panel: s.panel === 'zaino' ? null : 'zaino' }))} title="Zaino (I)" aria-label="Zaino">
         <span aria-hidden>🎒</span>
       </button>
+      <button className="icon-btn" onClick={() => setGame((s) => ({ panel: s.panel === 'missioni' ? null : 'missioni' }))} title="Missioni (M)" aria-label="Missioni">
+        <span aria-hidden>📜</span>
+      </button>
       <button className="icon-btn" onClick={() => setGame((s) => ({ classPicker: !s.classPicker }))} title="Classe (C)" aria-label="Classe">
         {cls ? <Icon name={`classe-${cls}`} size={30} /> : <span aria-hidden>✦</span>}
       </button>
@@ -168,11 +173,11 @@ function SideButtons() {
   );
 }
 
-function Toasts() {
+function Toasts({ max }: { max: number }) {
   const toasts = useGame((s) => s.toasts);
   return (
     <div className="toasts">
-      {toasts.slice(-3).map((t) => (
+      {toasts.slice(-max).map((t) => (
         <div key={t.id} className="toast">
           {t.text}
         </div>
@@ -340,6 +345,7 @@ function HelpPanel({ touch }: { touch: boolean }) {
     ['Classe', 'C', 'Pulsante Classe in alto'],
     ['Personaggio e talenti', 'P', 'Pulsante 👤'],
     ['Zaino', 'I', 'Pulsante 🎒'],
+    ['Missioni', 'M', 'Pulsante 📜'],
     ['Pozione', 'H', 'Pulsante 🧪'],
     ['Zoom', 'Rotella', '—'],
   ];

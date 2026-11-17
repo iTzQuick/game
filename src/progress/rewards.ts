@@ -28,7 +28,7 @@ export function contributeTo(b: BuildingId, n: number) {
   setTimeout(() => (pendingContrib = Math.max(0, pendingContrib - amount)), 6000);
 }
 
-function gainXp(amount: number, reason?: string) {
+export function gainXp(amount: number, reason?: string) {
   const g = getGame();
   const cls = g.room.classes[g.selfId];
   if (!cls || amount <= 0) return;

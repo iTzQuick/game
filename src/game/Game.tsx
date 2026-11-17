@@ -27,8 +27,10 @@ import { runRequest } from '../world/layout';
 import { groupKeeper } from '../progress/group';
 import { initRewards } from '../progress/rewards';
 import { getProgress, mutate } from '../progress/store';
+import { storyKeeper } from '../story/keeper';
+import { initStoryClient } from '../story/client';
 
-if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press, groupKeeper, getProgress, mutate });
+if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press, groupKeeper, storyKeeper, getProgress, mutate });
 
 export function Game() {
   const quality = useGame((s) => s.settings.quality);
@@ -53,9 +55,13 @@ export function Game() {
     director.start();
     groupKeeper.start();
     const offRewards = initRewards();
+    storyKeeper.start();
+    const offStory = initStoryClient();
     return () => {
       off?.();
       offRewards();
+      offStory();
+      storyKeeper.stop();
       groupKeeper.stop();
       director.stop();
       combat.onRemoteAbility = null;
