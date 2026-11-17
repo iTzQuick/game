@@ -1,8 +1,8 @@
 // Elenco dei modelli 3D pronti (in public/models) e il loro uso nel gioco.
 // Si aggiungono qui man mano che arrivano da Higgsfield.
 
-import { Component, Suspense, useState, type ReactNode } from 'react';
-import { registerModels, RiggedModel, PropModel, PROP_MODELS, type ModelCtrl, type ModelDef } from './RiggedModel';
+import { Component, Suspense, useEffect, type ReactNode } from 'react';
+import { modelStatus, registerModels, RiggedModel, PropModel, PROP_MODELS, type ModelCtrl, type ModelDef } from './RiggedModel';
 import { Dagger, Halo, Orb, Shield, Staff, Sword } from './gear';
 
 // lama in avanti e un po' in basso, come in guardia
@@ -80,13 +80,14 @@ registerModels({
 });
 
 /** Se un modello non si carica, si torna alla versione di forme semplici. */
-class ModelBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
+class ModelBoundary extends Component<{ children: ReactNode; fallback: ReactNode; file: string }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
   componentDidCatch(err: unknown) {
-    console.warn('Modello 3D non caricato, uso la versione semplice', err);
+    console.warn(`Modello 3D ${this.props.file} non caricato, uso la versione semplice`, err);
+    modelStatus.failed.set(this.props.file, err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120));
   }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children;
@@ -99,7 +100,7 @@ class ModelBoundary extends Component<{ children: ReactNode; fallback: ReactNode
  */
 export function ModelOr({ def, ctrl, onReady }: { def: ModelDef; ctrl: ModelCtrl; onReady: (ready: boolean) => void }) {
   return (
-    <ModelBoundary fallback={<Reset onReady={onReady} />}>
+    <ModelBoundary fallback={<Reset onReady={onReady} />} file={def.url.split('/').pop() ?? def.url}>
       <Suspense fallback={null}>
         <RiggedModel def={def} ctrl={ctrl} onReady={() => onReady(true)} />
       </Suspense>
@@ -108,10 +109,9 @@ export function ModelOr({ def, ctrl, onReady }: { def: ModelDef; ctrl: ModelCtrl
 }
 
 function Reset({ onReady }: { onReady: (r: boolean) => void }) {
-  useState(() => {
-    onReady(false);
-    return 0;
-  });
+  // una volta sola, quando il modello si arrende
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => onReady(false), []);
   return null;
 }
 
@@ -130,7 +130,7 @@ export function PropOr({
 }) {
   if (!PROP_MODELS[name]) return <>{fallback}</>;
   return (
-    <ModelBoundary fallback={fallback}>
+    <ModelBoundary fallback={fallback} file={PROP_MODELS[name].url.split('/').pop() ?? name}>
       <Suspense fallback={fallback}>
         <PropModel name={name} height={height} maxWidth={maxWidth} y={y} />
       </Suspense>

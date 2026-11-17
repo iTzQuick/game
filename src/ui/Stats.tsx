@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { getRoom } from '../net/room';
 import { displayName, useGame } from '../game/store';
+import { MODELS_ENABLED, modelStatus } from '../player/RiggedModel';
 
 export const frameStats = {
   frames: 0,
@@ -11,6 +12,8 @@ export const frameStats = {
   fps: 0,
   worst: 0,
   worstAcc: 0,
+  /** risoluzione attuale (pixel per punto) */
+  dpr: 1,
   tick(dt: number) {
     this.frames++;
     this.acc += dt;
@@ -36,8 +39,17 @@ export function StatsPanel() {
   return (
     <div className="stats">
       <div>
-        <b>{frameStats.fps}</b> FPS · frame peggiore {frameStats.worst} ms
+        <b>{frameStats.fps}</b> FPS · frame peggiore {frameStats.worst} ms · risoluzione ×{frameStats.dpr}
       </div>
+      <div className="muted">
+        {MODELS_ENABLED ? `modelli 3D pronti: ${modelStatus.ready.size}` : 'modelli 3D spenti (?modelli=0)'}
+        {modelStatus.failed.size > 0 && ` · non caricati: ${modelStatus.failed.size}`}
+      </div>
+      {[...modelStatus.failed].map(([file, msg]) => (
+        <div key={file} className="error-line">
+          {file}: {msg}
+        </div>
+      ))}
       {Object.entries(peers).map(([id, p]) => (
         <div key={id}>
           {displayName(id)}: {linkLabel(p.link)}
