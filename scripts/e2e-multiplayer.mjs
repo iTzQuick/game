@@ -136,6 +136,10 @@ async function fratturaTests(browser) {
   );
   for (const p of [A, B, C]) await p.keyboard.press('Escape');
 
+  // tappa 6: le giornaliere (di riserva: in locale il narratore è spento) arrivano a tutti
+  const daily = await Promise.all([A, B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.storia?.daily.length === 3, null, 8000)));
+  check(daily.every(Boolean), 'le tre missioni giornaliere arrivano a tutti');
+
   // chi non è host chiede di aprire la Frattura
   await g(B, () => window.__fratture.runRequest('start'));
   const opened = await Promise.all([A, B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
@@ -274,6 +278,43 @@ async function fratturaTests(browser) {
   const homePos = await g(C, () => ({ ...window.__fratture.local.pos }));
   check(home.every(Boolean) && Math.hypot(homePos.x, homePos.z) < 20, 'si torna tutti al Crocevia');
   await C.screenshot({ path: `${SHOTS}/ritorno-crocevia.png` });
+
+  // ---------- tappa 6: la Città Sommersa e le missioni ----------
+  const tale = await C.waitForSelector('.dialog-title:has-text("Il narratore")', { timeout: 6000 }).then(
+    () => true,
+    () => false,
+  );
+  check(tale, 'tornati al Crocevia, il narratore racconta che la Città Sommersa si è accesa');
+  for (const p of [B, C]) await p.keyboard.press('Escape');
+  await g(C, () => window.__fratture.runRequest('start', 'citta-sommersa'));
+  const inCity = await Promise.all([B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.world === 'citta-sommersa' && window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
+  check(inCity.every(Boolean), 'dal suo portale si entra nella Città Sommersa (tutti)');
+  await sleep(600);
+  await enterRoom(B, 1);
+  await enterRoom(C, 1);
+  await waitFor(B, () => window.__fratture.director.debug.sim?.enemies.size > 0, null, 8000);
+  for (let i = 0; i < 25; i++) {
+    const cl = await g(B, () => window.__fratture.getGame().room.run?.cleared ?? 0);
+    if (cl >= 2) break;
+    await strikeAll(C, 80);
+    await sleep(400);
+  }
+  const story = await Promise.all([B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.storia?.capProg === 1, null, 6000)));
+  check(story.every(Boolean), 'una stanza ripulita nella Città fa avanzare la missione dell’Atto I (1/3)');
+  await C.screenshot({ path: `${SHOTS}/citta-sommersa.png` });
+  // una giornaliera compiuta: l'host manda la ricompensa a tutti
+  const frags0 = await g(C, () => window.__fratture.getProgress().save.fragments);
+  await g(B, () => {
+    const r = window.__fratture.getRoom();
+    r.updateRoom((s) => ({ ...s, storia: { ...s.storia, daily: [{ ...s.storia.daily[0], goal: { k: 'combo', n: 1 } }], dailyProg: [0] } }));
+    window.__fratture.storyKeeper.debug.feed({ k: 'combo', mondo: 'citta-sommersa', grado: 2 });
+  });
+  const paid = await waitFor(C, (f) => window.__fratture.getProgress().save.fragments > f, frags0, 6000);
+  check(paid, 'giornaliera compiuta: la ricompensa arriva anche a chi non è host');
+  await C.keyboard.press('KeyM');
+  await C.waitForSelector('.missions-panel', { timeout: 3000 }).catch(() => {});
+  await C.screenshot({ path: `${SHOTS}/missioni.png` });
+  await C.keyboard.press('Escape');
   await ctx.close();
 
   // ---------- tutte le abilità di tutte le classi, senza errori ----------

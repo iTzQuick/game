@@ -13,6 +13,7 @@ import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
 import { EnemySim, type Hit, type PlayerView } from './sim';
 import { FRAGMENTS, generateItem } from '../progress/defs';
+import { SOMMERSA, sommersaOpen } from '../story/core';
 
 const TICK_MS = 33;
 const SNAP_HZ = 15;
@@ -68,7 +69,7 @@ export class HostDirector {
         nextTick: now + 250,
         final: isC ? { dmg: msg.z.finalDmg ?? 80, r: 4.5 } : undefined,
       });
-    } else if (msg.t === 'runreq') this.onRunRequest(from, msg.a);
+    } else if (msg.t === 'runreq') this.onRunRequest(from, msg.a, msg.w);
   }
 
   private applyHits(from: string, hits: Hit[]) {
@@ -77,7 +78,7 @@ export class HostDirector {
     for (const h of hits) for (const ev of this.sim.applyHit(from, h, now)) emitCombat(ev);
   }
 
-  private onRunRequest(from: string, a: 'start' | 'leave' | 'abandon') {
+  private onRunRequest(from: string, a: 'start' | 'leave' | 'abandon', w?: string) {
     const room = getRoom();
     if (!room) return;
     const run = room.roomState.run;
@@ -96,6 +97,8 @@ export class HostDirector {
           wave: 0,
           wipes: 0,
         };
+        // la Città Sommersa si apre dopo la prima Frattura richiusa
+        if (w === SOMMERSA && sommersaOpen(s.gstats ?? { fratture: 0 })) next.world = SOMMERSA;
         return { ...s, run: next };
       });
     } else if (run && ((a === 'leave' && run.phase === 'complete') || (a === 'abandon' && from === room.self.id))) {

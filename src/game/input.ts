@@ -77,8 +77,8 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
       }
       return;
     }
-    if ((e.code === 'KeyP' || e.code === 'KeyI') && !e.repeat) {
-      const want = e.code === 'KeyP' ? 'personaggio' : 'zaino';
+    if ((e.code === 'KeyP' || e.code === 'KeyI' || e.code === 'KeyM') && !e.repeat) {
+      const want = e.code === 'KeyP' ? 'personaggio' : e.code === 'KeyI' ? 'zaino' : 'missioni';
       setGame({ panel: s.panel === want ? null : want, classPicker: false });
       if (s.panel !== want) document.exitPointerLock?.();
       return;
