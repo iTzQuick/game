@@ -241,6 +241,11 @@ armi, sfera, bastone e aureola stanno in `src/player/gear.tsx` e si agganciano a
 ossa (`gear` in `models.tsx`): la posizione si dà nella posa di partenza, in metri, e
 poi seguono le animazioni da sole.
 
+Lo Sciame non è una figura a due gambe, quindi non ha scheletro (`rigid`): vola,
+ondeggia e si getta in avanti grazie al codice di `EnemyMesh`. I Velati sotto il velo
+rendono trasparente il loro modello. Per i nemici, `attackSpeed` fa cadere il colpo
+dell'animazione alla fine del preavviso rosso a terra.
+
 Con `?modelli=0` nell'indirizzo si gioca con le forme semplici (dispositivi molto
 deboli). Il test end-to-end lo usa in tutte le finestre tranne una, perché senza
 scheda video tante finestre con i modelli scendono a pochi fotogrammi al secondo.

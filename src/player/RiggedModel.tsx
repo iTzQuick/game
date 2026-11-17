@@ -26,6 +26,10 @@ export interface ModelDef {
   attackSpeed?: number;
   /** oggetti agganciati alle ossa (armi, aureole…) */
   gear?: GearDef[];
+  /** modello senza scheletro: lo muove il codice (vedi EnemyMesh) */
+  rigid?: boolean;
+  /** altezza da terra della base del modello (per chi vola) */
+  lift?: number;
 }
 
 /**
@@ -53,9 +57,11 @@ export interface ModelCtrl {
   flash: number;
   /** rosso del preavviso d'attacco (nemici) */
   charge: number;
+  /** 1 = pieno; meno di 1 = trasparente (i Velati sotto il velo) */
+  opacity: number;
 }
 
-export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0 });
+export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0, opacity: 1 });
 
 const url = (file: string) => `${import.meta.env.BASE_URL}models/${file}`;
 
@@ -127,7 +133,12 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
   }, [gltf, def]);
 
   const roll = useRef<THREE.Group>(null);
-  const state = useRef<{ current: THREE.AnimationAction | null; attack: number; attackUntil: number }>({ current: null, attack: 0, attackUntil: 0 });
+  const state = useRef<{ current: THREE.AnimationAction | null; attack: number; attackUntil: number; opacity: number }>({
+    current: null,
+    attack: 0,
+    attackUntil: 0,
+    opacity: 1,
+  });
 
   useEffect(() => {
     const start = actions.idle ?? Object.values(actions)[0];
@@ -177,6 +188,17 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
         roll.current.position.y = def.height * 0.45;
       }
     }
+    // trasparenza (Velati): si accende solo quando serve, per non pesare sugli altri
+    if (ctrl.opacity < 1 || st.opacity < 1) {
+      const o = Math.max(0, Math.min(1, ctrl.opacity));
+      for (const m of mats) {
+        m.transparent = o < 1;
+        m.depthWrite = o >= 1;
+        m.opacity = o;
+      }
+      if (o >= 1 || (st.opacity >= 1) !== (o >= 1)) for (const m of mats) m.needsUpdate = true;
+      st.opacity = o;
+    }
     // lampo bianco quando colpito, rosso quando carica un attacco
     if (ctrl.flash > 0 || ctrl.charge > 0 || mats[0]?.emissiveIntensity) {
       for (const m of mats) {
@@ -196,7 +218,7 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
   // il gruppo "roll" ruota attorno al bacino (a metà altezza), il modello sotto è spostato di conseguenza
   return (
     <group ref={roll} position={[0, def.height * 0.45, 0]}>
-      <group position={[0, place.y - def.height * 0.45, 0]} rotation={[0, def.yaw ?? 0, 0]} scale={place.scale}>
+      <group position={[0, place.y - def.height * 0.45 + (def.lift ?? 0), 0]} rotation={[0, def.yaw ?? 0, 0]} scale={place.scale}>
         <primitive object={scene} />
       </group>
       {anchors.map((a, i) => (

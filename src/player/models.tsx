@@ -39,6 +39,13 @@ registerModels({
   enemies: {
     // l'attacco dura quanto il preavviso (0,55 s), così il colpo cade quando arriva il danno
     ombra: { file: 'ombra.glb', height: 1.95, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.6, attackSpeed: 1.1 },
+    // senza scheletro: vola, ondeggia e si getta in avanti grazie al codice di EnemyMesh
+    sciame: { file: 'sciame.glb', height: 0.42, clips: {}, rigid: true, lift: 0.75 },
+    // attackSpeed = momento del colpo nel clip ritagliato / preavviso del nemico (defs.ts)
+    riflesso: { file: 'riflesso.glb', height: 2.1, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.0, attackSpeed: 0.87 },
+    bruto: { file: 'bruto.glb', height: 2.5, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 1.5, attackSpeed: 0.68 },
+    velato: { file: 'velato.glb', height: 2.0, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.6, attackSpeed: 0.84 },
+    eco: { file: 'eco.glb', height: 3.4, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.2, attackSpeed: 1.0 },
   },
   props: {
     portale: { file: 'portale.glb', height: 5.6 },
