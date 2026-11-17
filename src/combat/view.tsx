@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import { spawnPuff, spawnRing } from '../fx/effects';
 import { EF, ENEMIES, type EnemyType } from './defs';
 import { combat, setDeathFx, type CZone } from './runtime';
+import { ENEMY_MODELS, newCtrl } from '../player/RiggedModel';
+import { ModelOr } from '../player/models';
 
 const ENEMY_COLORS: Record<EnemyType, { body: string; eye: string }> = {
   ombra: { body: '#1d1630', eye: '#c9a6ff' },
@@ -70,6 +72,11 @@ function EnemyMesh({ id }: { id: number }) {
   const markRef = useRef<THREE.Mesh>(null);
   const tauntRef = useRef<THREE.Mesh>(null);
   const last = useRef({ x: 0, z: 0, speed: 0 });
+  // modello 3D animato (Higgsfield) per i tipi che ce l'hanno
+  const modelDef = ENEMY_MODELS[type];
+  const [modelReady, setModelReady] = useState(false);
+  const ctrl = useMemo(newCtrl, []);
+  const wasCharging = useRef(false);
 
   const mats = useMemo(() => {
     const c = ENEMY_COLORS[type];
@@ -112,6 +119,15 @@ function EnemyMesh({ id }: { id: number }) {
 
     // lampo quando viene colpito, rosso mentre carica un attacco
     const flash = now - e.flash < 110;
+    if (modelDef) {
+      b.visible = !modelReady;
+      ctrl.move = speed > 0.4 ? 'run' : 'idle';
+      ctrl.speed = speed;
+      ctrl.flash = flash ? 1 : 0;
+      ctrl.charge = charging ? 0.6 + Math.sin(now / 50) * 0.3 : 0;
+      if (charging && !wasCharging.current) ctrl.attack++;
+      wasCharging.current = charging;
+    }
     const enraged = (e.flags & EF.enraged) !== 0;
     mats.body.emissive.set(flash ? '#ffffff' : charging ? '#ff2a3d' : enraged ? '#5a0010' : '#000000');
     mats.body.emissiveIntensity = flash ? 0.9 : charging ? 0.6 + Math.sin(now / 50) * 0.3 : 0.6;
@@ -136,6 +152,7 @@ function EnemyMesh({ id }: { id: number }) {
   const headY = type === 'sciame' ? 0.9 : 1.6 * s;
   return (
     <group ref={root} visible={false}>
+      {modelDef && <ModelOr def={modelDef} ctrl={ctrl} onReady={setModelReady} />}
       <group ref={body}>
         <EnemyBody type={type} mats={mats} s={s} />
       </group>

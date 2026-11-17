@@ -4,7 +4,7 @@
 
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CLASSES, EMOTES, MOVE, type ClassId } from '../game/constants';
 import { useGame } from '../game/store';
@@ -13,6 +13,8 @@ import { getRoom } from '../net/room';
 import { VF } from '../combat/protocol';
 import { REVIVE_RADIUS } from '../combat/defs';
 import { NEUTRAL, SKIN, toon } from './materials';
+import { HERO_MODELS, newCtrl } from './RiggedModel';
+import { ModelOr } from './models';
 
 export interface Pose {
   speed: number;
@@ -61,6 +63,12 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
   const accent = cls?.accent ?? '#5d5868';
 
   const body = useRef<THREE.Group>(null);
+  // modello 3D animato (Higgsfield) se la classe ce l'ha; finché non è pronto resta l'eroe di forme semplici
+  const def = classId ? HERO_MODELS[classId] : undefined;
+  const [modelReady, setModelReady] = useState(false);
+  useEffect(() => setModelReady(false), [classId]);
+  const ctrl = useMemo(newCtrl, []);
+  const prevAttack = useRef(-1);
   const legL = useRef<THREE.Group>(null);
   const legR = useRef<THREE.Group>(null);
   const armL = useRef<THREE.Group>(null);
@@ -117,7 +125,14 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
 
     const f = p.flags;
     const veiled = (f & VF.veil) !== 0;
-    b.visible = isSelf || !veiled; // gli altri non vedono chi è sotto il Velo
+    b.visible = !(def && modelReady) && (isSelf || !veiled); // gli altri non vedono chi è sotto il Velo
+    // comandi per il modello animato
+    ctrl.visible = isSelf || !veiled;
+    ctrl.move = p.anim === 'down' ? 'down' : p.speed > 0.5 && p.dodgeT < 0 ? 'run' : 'idle';
+    ctrl.speed = p.speed;
+    ctrl.roll = p.dodgeT >= 0 && p.anim !== 'down' ? Math.min(1, p.dodgeT / MOVE.dodgeTime) : -1;
+    if (p.attackT >= 0 && (prevAttack.current < 0 || p.attackT < prevAttack.current)) ctrl.attack++;
+    prevAttack.current = p.attackT;
     if (bastion.current) {
       bastion.current.visible = (f & VF.bastion) !== 0;
       bastion.current.scale.setScalar(1 + Math.sin(t * 6) * 0.04);
@@ -194,6 +209,7 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
 
   return (
     <group>
+      {def && <ModelOr key={classId ?? ''} def={def} ctrl={ctrl} onReady={setModelReady} />}
       <group ref={body}>
         {/* le coordinate qui sotto sono relative al bacino (y = 0.86) */}
         {/* gambe */}
