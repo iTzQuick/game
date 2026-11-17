@@ -23,6 +23,8 @@ mkdirSync(SHOTS, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
+/** File dei modelli 3D scaricati (nome giocatore, file, stato HTTP). */
+const modelLoads = [];
 let failures = 0;
 
 function check(cond, msg) {
@@ -50,12 +52,17 @@ async function openPlayer(context, name, { code, quality = 'bassa', extra = {} }
   await page.setViewportSize({ width: 480, height: 270 });
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(`${name} console: ${m.text()}`);
+    if (m.type() === 'error' || /Modello 3D non caricato|osso .* non trovato/.test(m.text())) errors.push(`${name} console: ${m.text()}`);
+  });
+  page.on('response', (r) => {
+    if (r.url().includes('/models/')) modelLoads.push({ name, file: r.url().split('/').pop(), status: r.status() });
   });
   await page.addInitScript((q) => {
     localStorage.setItem('fratture.settings', JSON.stringify({ quality: q, touch: 'off' }));
   }, quality);
-  const q = new URLSearchParams({ rete: 'locale', ...extra });
+  // Senza scheda video, tante finestre con i modelli 3D scendono a 2-4 fotogrammi
+  // al secondo: quasi tutte usano le forme semplici, una sola carica i modelli.
+  const q = new URLSearchParams({ rete: 'locale', modelli: '0', ...extra });
   if (code) q.set('stanza', code);
   await page.goto(`${BASE}?${q}`);
   await page.fill('input[placeholder="Come ti chiamano?"]', name);
@@ -332,7 +339,7 @@ async function main() {
     check(/^[A-Z2-9]{4}$/.test(sa.code), `stanza creata con codice ${sa.code}`);
     check(sa.hostId === sa.selfId, 'chi crea la partita è l’host');
 
-    const B = await openPlayer(ctx, 'Bruno', { code: sa.code, quality: 'media' });
+    const B = await openPlayer(ctx, 'Bruno', { code: sa.code, quality: 'media', extra: { modelli: '1' } });
     const C = await openPlayer(ctx, 'Cleo', { code: sa.code });
     const D = await openPlayer(ctx, 'Dario', { code: sa.code });
     await Promise.all([B, C, D].map(waitJoined));
@@ -488,6 +495,9 @@ async function main() {
     server.kill();
   }
 
+  const okModels = new Set(modelLoads.filter((m) => m.status === 200).map((m) => m.file));
+  const badModels = modelLoads.filter((m) => m.status !== 200 && m.status !== 304);
+  check(okModels.has('portale.glb') && badModels.length === 0, `i modelli 3D si caricano (${[...okModels].join(', ') || 'nessuno'})`);
   const relevant = errors.filter((e) => !/favicon|WebGL|GPU stall|ReadPixels/i.test(e));
   check(relevant.length === 0, `nessun errore JavaScript${relevant.length ? ':\n  ' + relevant.join('\n  ') : ''}`);
   console.log(failures ? `\n${failures} controlli falliti` : '\nTutti i controlli superati');

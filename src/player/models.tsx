@@ -2,14 +2,43 @@
 // Si aggiungono qui man mano che arrivano da Higgsfield.
 
 import { Component, Suspense, useState, type ReactNode } from 'react';
-import { registerModels, RiggedModel, PropModel, type ModelCtrl, type ModelDef } from './RiggedModel';
+import { registerModels, RiggedModel, PropModel, PROP_MODELS, type ModelCtrl, type ModelDef } from './RiggedModel';
+import { Dagger, Halo, Orb, Shield, Staff, Sword } from './gear';
+
+// lama in avanti e un po' in basso, come in guardia
+const FORWARD: [number, number, number] = [Math.PI / 2 + 0.25, 0, 0];
 
 registerModels({
   heroes: {
-    guardiano: { file: 'guardiano.glb', height: 1.85, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5 },
+    guardiano: {
+      file: 'guardiano.glb', height: 1.85, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5, attackSpeed: 1.5,
+      gear: [
+        { bone: 'RightHand', pos: [-0.032, -0.067, 0.03], rot: FORWARD, node: <Sword /> },
+        { bone: 'LeftForeArm', pos: [0.09, -0.085, 0.12], rot: [0, 0.35, 0], node: <Shield /> },
+      ],
+    },
+    lama: {
+      file: 'lama.glb', height: 1.75, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 6, attackSpeed: 1.5,
+      gear: [
+        { bone: 'RightHand', pos: [-0.022, -0.065, 0.025], rot: FORWARD, node: <Dagger /> },
+        { bone: 'LeftHand', pos: [0.023, -0.065, 0.025], rot: FORWARD, node: <Dagger /> },
+      ],
+    },
+    tessitore: {
+      file: 'tessitore.glb', height: 1.95, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5, attackSpeed: 1.5,
+      gear: [{ bone: 'RightHand', pos: [-0.06, -0.14, 0.18], node: <Orb /> }],
+    },
+    custode: {
+      file: 'custode.glb', height: 1.8, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5, attackSpeed: 1.5,
+      gear: [
+        { bone: 'RightHand', pos: [-0.038, -0.055, 0.04], node: <Staff /> },
+        { bone: 'Head', pos: [0, 0, 0], node: <Halo height={0.36} /> },
+      ],
+    },
   },
   enemies: {
-    ombra: { file: 'ombra.glb', height: 1.95, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.6 },
+    // l'attacco dura quanto il preavviso (0,55 s), così il colpo cade quando arriva il danno
+    ombra: { file: 'ombra.glb', height: 1.95, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.6, attackSpeed: 1.1 },
   },
   props: {
     portale: { file: 'portale.glb', height: 5.6 },
@@ -53,6 +82,7 @@ function Reset({ onReady }: { onReady: (r: boolean) => void }) {
 }
 
 export function PropOr({ name, fallback }: { name: string; fallback: ReactNode }) {
+  if (!PROP_MODELS[name]) return <>{fallback}</>;
   return (
     <ModelBoundary fallback={fallback}>
       <Suspense fallback={fallback}>

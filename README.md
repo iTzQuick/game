@@ -183,7 +183,8 @@ npm run test:online # dopo la build: 3 browser separati sul Supabase vero, in We
 Parametri utili nell'URL:
 
 - `?rete=locale` forza la modalità locale anche con Supabase configurato;
-- `?rete=locale&p2p=1` usa WebRTC anche in locale (per provare il P2P su un computer solo).
+- `?rete=locale&p2p=1` usa WebRTC anche in locale (per provare il P2P su un computer solo);
+- `?modelli=0` usa le forme semplici al posto dei modelli 3D.
 
 ### Struttura
 
@@ -222,15 +223,27 @@ I modelli in `public/models` arrivano da Higgsfield (immagine → modello 3D con
 scheletro, poi un'animazione per file). Lo stile è il "cartoon morbido".
 
 ```bash
-# unisce i clip (stesso scheletro), riduce le texture a WebP 1024, comprime la geometria
+# quando arriva il colpo nel clip d'attacco (i clip della libreria hanno lunghe preparazioni)
+node scripts/models/strike.mjs attack.glb
+# unisce i clip (stesso scheletro), ritaglia l'attacco attorno al colpo,
+# riduce le texture a WebP 1024, comprime la geometria
 node scripts/models/prepare.mjs public/models/guardiano.glb \
-  idle.glb:idle run.glb:run attack.glb:attack down.glb:down --texture 1024
+  idle.glb:idle run.glb:run attack.glb:attack@0.72-1.5 down.glb:down --texture 1024
 node scripts/models/inspect.mjs public/models/*.glb   # triangoli, texture, clip, misure
 ```
 
 Per usarne uno nuovo basta aggiungerlo in `src/player/models.tsx` (altezza, nomi
-dei clip, velocità della corsa). Classi e nemici senza modello usano ancora le forme
-semplici, e lo stesso succede se un file non si carica.
+dei clip, velocità della corsa e dell'attacco). Classi e nemici senza modello usano
+ancora le forme semplici, e lo stesso succede se un file non si carica.
+
+Quando crea lo scheletro, Higgsfield toglie gli oggetti tenuti in mano. Per questo
+armi, sfera, bastone e aureola stanno in `src/player/gear.tsx` e si agganciano alle
+ossa (`gear` in `models.tsx`): la posizione si dà nella posa di partenza, in metri, e
+poi seguono le animazioni da sole.
+
+Con `?modelli=0` nell'indirizzo si gioca con le forme semplici (dispositivi molto
+deboli). Il test end-to-end lo usa in tutte le finestre tranne una, perché senza
+scheda video tante finestre con i modelli scendono a pochi fotogrammi al secondo.
 
 ## Prossima tappa
 

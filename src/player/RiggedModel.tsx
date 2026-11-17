@@ -3,8 +3,8 @@
 // nemico viene colpito non accende anche gli altri.
 
 import { useGLTF } from '@react-three/drei';
-import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { createPortal, useFrame } from '@react-three/fiber';
+import { Fragment, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { ClassId } from '../game/constants';
@@ -22,6 +22,22 @@ export interface ModelDef {
   clips: Partial<Record<'idle' | 'run' | 'attack' | 'down', string>>;
   /** velocità (m/s) a cui il clip di corsa sembra giusto */
   runSpeed?: number;
+  /** velocità del clip d'attacco (già ritagliato attorno al colpo) */
+  attackSpeed?: number;
+  /** oggetti agganciati alle ossa (armi, aureole…) */
+  gear?: GearDef[];
+}
+
+/**
+ * Un oggetto agganciato a un osso. Posizione e rotazione si danno come se il
+ * personaggio fosse nella posa di partenza (A), in metri e negli assi del
+ * personaggio (+Z avanti, −X la sua destra), rispetto all'osso.
+ */
+export interface GearDef {
+  bone: string;
+  pos: [number, number, number];
+  rot?: [number, number, number];
+  node: ReactNode;
 }
 
 /** Comandi per l'animazione, aggiornati a ogni frame da chi usa il modello. */
@@ -48,12 +64,19 @@ export const HERO_MODELS: Partial<Record<ClassId, ModelDef>> = {};
 export const ENEMY_MODELS: Partial<Record<EnemyType, ModelDef>> = {};
 export const PROP_MODELS: Record<string, { url: string; height: number; yaw?: number }> = {};
 
+/**
+ * `?modelli=0` nell'indirizzo gioca con le forme semplici: per i dispositivi
+ * molto deboli e per i test con tante finestre senza scheda video.
+ */
+export const MODELS_ENABLED = typeof location === 'undefined' || new URLSearchParams(location.search).get('modelli') !== '0';
+
 /** Registra i modelli (chiamato da models.ts, che elenca i file presenti). */
 export function registerModels(m: {
   heroes?: Partial<Record<ClassId, Omit<ModelDef, 'url'> & { file: string }>>;
   enemies?: Partial<Record<EnemyType, Omit<ModelDef, 'url'> & { file: string }>>;
   props?: Record<string, { file: string; height: number; yaw?: number }>;
 }) {
+  if (!MODELS_ENABLED) return;
   for (const [k, v] of Object.entries(m.heroes ?? {})) if (v) HERO_MODELS[k as ClassId] = { ...v, url: url(v.file) };
   for (const [k, v] of Object.entries(m.enemies ?? {})) if (v) ENEMY_MODELS[k as EnemyType] = { ...v, url: url(v.file) };
   for (const [k, v] of Object.entries(m.props ?? {})) PROP_MODELS[k] = { ...v, url: url(v.file) };
@@ -70,7 +93,7 @@ function fit(object: THREE.Object3D, height: number) {
 
 export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: ModelCtrl; onReady?: () => void }) {
   const gltf = useGLTF(def.url);
-  const { scene, mats, mixer, actions, place } = useMemo(() => {
+  const { scene, mats, mixer, actions, place, anchors } = useMemo(() => {
     const scene = cloneSkinned(gltf.scene) as THREE.Object3D;
     const mats: THREE.MeshStandardMaterial[] = [];
     scene.traverse((o) => {
@@ -99,7 +122,8 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       }
       actions[key as keyof typeof actions] = a;
     }
-    return { scene, mats, mixer, actions, place: fit(gltf.scene, def.height) };
+    const place = fit(gltf.scene, def.height);
+    return { scene, mats, mixer, actions, place, anchors: anchorGear(scene, def.gear ?? [], place.scale) };
   }, [gltf, def]);
 
   const roll = useRef<THREE.Group>(null);
@@ -126,8 +150,8 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       st.attack = ctrl.attack;
       const a = actions.attack;
       a.reset();
-      a.timeScale = 1.6; // i clip della libreria sono lenti per un gioco d'azione
-      st.attackUntil = now + (a.getClip().duration / a.timeScale) * 1000 * 0.85;
+      a.timeScale = def.attackSpeed ?? 1.6; // i clip della libreria sono lenti per un gioco d'azione
+      st.attackUntil = now + (a.getClip().duration / a.timeScale) * 1000 * 0.9;
     }
     if (ctrl.move === 'down' && actions.down) want = actions.down;
     else if (now < st.attackUntil && actions.attack) want = actions.attack;
@@ -175,8 +199,48 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       <group position={[0, place.y - def.height * 0.45, 0]} rotation={[0, def.yaw ?? 0, 0]} scale={place.scale}>
         <primitive object={scene} />
       </group>
+      {anchors.map((a, i) => (
+        <Fragment key={i}>
+          {createPortal(
+            <group position={a.position} quaternion={a.quaternion} scale={a.scale}>
+              {a.node}
+            </group>,
+            a.bone,
+          )}
+        </Fragment>
+      ))}
     </group>
   );
+}
+
+/**
+ * Converte gli oggetti dati "nella posa di partenza, in metri" in trasformazioni
+ * locali dell'osso, così poi seguono l'osso in ogni animazione.
+ */
+function anchorGear(scene: THREE.Object3D, gear: GearDef[], metersPerUnit: number) {
+  scene.updateMatrixWorld(true);
+  const out: { bone: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion; scale: number; node: ReactNode }[] = [];
+  for (const g of gear) {
+    const bone = scene.getObjectByName(g.bone);
+    if (!bone) {
+      console.warn(`osso ${g.bone} non trovato`);
+      continue;
+    }
+    const p = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const s = new THREE.Vector3();
+    bone.matrixWorld.decompose(p, q, s);
+    const qi = q.clone().invert();
+    const k = s.x * metersPerUnit; // metri per unità dell'osso
+    out.push({
+      bone,
+      position: new THREE.Vector3(...g.pos).divideScalar(metersPerUnit).applyQuaternion(qi).divideScalar(s.x),
+      quaternion: qi.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...(g.rot ?? [0, 0, 0])))),
+      scale: 1 / k,
+      node: g.node,
+    });
+  }
+  return out;
 }
 
 /** Oggetto statico (portali, edifici…). */
