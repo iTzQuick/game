@@ -66,8 +66,11 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
   const body = useRef<THREE.Group>(null);
   // modello 3D animato (Higgsfield) se la classe ce l'ha; finché non è pronto resta l'eroe di forme semplici
   const def = classId ? HERO_MODELS[classId] : undefined;
-  const [modelReady, setModelReady] = useState(false);
-  useEffect(() => setModelReady(false), [classId]);
+  // "pronto" vale per un file preciso: cambiando classe torna falso da solo, senza
+  // un effetto che azzeri (gli effetti dei figli girano prima: con il modello già in
+  // memoria l'azzeramento arrivava dopo il "pronto" e il modello restava nascosto)
+  const [readyUrl, setReadyUrl] = useState<string | null>(null);
+  const modelReady = !!def && readyUrl === def.url;
   const ctrl = useMemo(newCtrl, []);
   const prevAttack = useRef(-1);
   const legL = useRef<THREE.Group>(null);
@@ -210,7 +213,7 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
 
   return (
     <group>
-      {def && <ModelOr key={classId ?? ''} def={def} ctrl={ctrl} onReady={setModelReady} />}
+      {def && <ModelOr key={classId ?? ''} def={def} ctrl={ctrl} onReady={(r) => setReadyUrl(r ? def.url : null)} />}
       <group ref={body}>
         {/* le coordinate qui sotto sono relative al bacino (y = 0.86) */}
         {/* gambe */}

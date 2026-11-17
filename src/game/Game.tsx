@@ -2,7 +2,8 @@
 
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Physics } from '@react-three/rapier';
-import { Suspense, useEffect, useRef } from 'react';
+import { PerformanceMonitor } from '@react-three/drei';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Effects } from '../fx/effects';
 import { LocalPlayer, localDebug } from '../player/LocalPlayer';
@@ -14,6 +15,8 @@ import { Frattura } from '../world/Frattura';
 import { installDesktopInput, press } from './input';
 import { isTouchDevice, useGame } from './store';
 import { frameStats } from '../ui/Stats';
+import { preloadModels } from '../player/RiggedModel';
+import '../player/models';
 import { getRoom } from '../net/room';
 import { dispatchCombat, isCombatMsg } from '../combat/bus';
 import { director } from '../combat/director';
@@ -60,8 +63,17 @@ export function Game() {
     };
   }, []);
 
-  const dpr: [number, number] =
-    quality === 'bassa' ? [0.75, 1] : quality === 'media' ? [1, Math.min(1.5, window.devicePixelRatio)] : [1, Math.min(2, window.devicePixelRatio)];
+  // Risoluzione: si parte dal massimo della qualità scelta e, se i fotogrammi
+  // scendono, si abbassa da sola (e risale quando il gioco torna fluido).
+  // Sui telefoni lo schermo ha 2-3 pixel per punto: sotto 1 l'immagine si sgrana.
+  const screen = window.devicePixelRatio || 1;
+  const maxDpr = Math.min(quality === 'bassa' ? 1.5 : quality === 'media' ? 1.75 : 2, screen);
+  const minDpr = Math.min(1, maxDpr);
+  const [dprScale, setDprScale] = useState(1);
+  const dpr = Math.max(minDpr, Math.round(maxDpr * dprScale * 100) / 100);
+  frameStats.dpr = dpr;
+  useEffect(() => setDprScale(1), [quality]);
+  useEffect(() => preloadModels(), []);
 
   return (
     <div className="game" ref={wrap}>
@@ -69,13 +81,19 @@ export function Game() {
         key={quality}
         shadows={quality === 'bassa' ? false : { type: quality === 'alta' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap }}
         dpr={dpr}
-        gl={{ antialias: quality !== 'bassa', powerPreference: 'high-performance' }}
+        gl={{ antialias: true, powerPreference: 'high-performance' }}
         camera={{ fov: 60, near: 0.1, far: 400, position: [0, 6, 18] }}
         onCreated={({ gl }) => {
           gl.toneMapping = THREE.ACESFilmicToneMapping;
           gl.toneMappingExposure = 1.15;
         }}
       >
+        <PerformanceMonitor
+          flipflops={6}
+          onDecline={() => setDprScale((s) => Math.max(0.5, s - 0.15))}
+          onIncline={() => setDprScale((s) => Math.min(1, s + 0.1))}
+          onFallback={() => setDprScale(0.5)}
+        />
         <Suspense fallback={null}>
           <Physics gravity={[0, -20, 0]}>
             {inRun ? <Frattura quality={quality} /> : <Crocevia quality={quality} />}

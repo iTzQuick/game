@@ -65,6 +65,26 @@ export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, vi
 
 const url = (file: string) => `${import.meta.env.BASE_URL}models/${file}`;
 
+/** Quali modelli sono pronti e quali hanno dato errore (si vede nelle statistiche). */
+export const modelStatus = {
+  ready: new Set<string>(),
+  failed: new Map<string, string>(),
+};
+const fileOf = (u: string) => u.split('/').pop() ?? u;
+
+/**
+ * Comincia a scaricare i modelli prima che servano (eroi alla partenza, nemici
+ * poco dopo), così quando scegli la classe o entri nella Frattura sono pronti.
+ */
+export function preloadModels() {
+  if (!MODELS_ENABLED) return;
+  const heroes = [...Object.values(HERO_MODELS).map((d) => d!.url), ...['spada', 'scudo', 'pugnale', 'bastone'].map((n) => PROP_MODELS[n]?.url)];
+  for (const u of heroes) if (u) useGLTF.preload(u);
+  setTimeout(() => {
+    for (const d of Object.values(ENEMY_MODELS)) if (d) useGLTF.preload(d.url);
+  }, 8000);
+}
+
 /** Eroi con il modello pronto. Le classi senza modello usano ancora l'eroe di forme semplici. */
 export const HERO_MODELS: Partial<Record<ClassId, ModelDef>> = {};
 export const ENEMY_MODELS: Partial<Record<EnemyType, ModelDef>> = {};
@@ -108,6 +128,7 @@ function fit(object: THREE.Object3D, height: number, maxWidth?: number) {
 
 export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: ModelCtrl; onReady?: () => void }) {
   const gltf = useGLTF(def.url);
+  modelStatus.ready.add(fileOf(def.url));
   const { scene, mats, mixer, actions, place, anchors } = useMemo(() => {
     const scene = cloneSkinned(gltf.scene) as THREE.Object3D;
     const mats: THREE.MeshStandardMaterial[] = [];
@@ -281,6 +302,7 @@ function anchorGear(scene: THREE.Object3D, gear: GearDef[], metersPerUnit: numbe
 export function PropModel({ name, height, maxWidth, y = 0 }: { name: string; height?: number; maxWidth?: number; y?: number }) {
   const def = PROP_MODELS[name];
   const gltf = useGLTF(def.url);
+  modelStatus.ready.add(fileOf(def.url));
   const h = height ?? def.height;
   const w = maxWidth ?? def.maxWidth;
   const { scene, place } = useMemo(() => {

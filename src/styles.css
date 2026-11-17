@@ -1718,3 +1718,8 @@ table.controls th.hl {
 .nametag-label .icon-img {
   margin-right: 2px;
 }
+.stats .error-line {
+  color: #ff8a9a;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
