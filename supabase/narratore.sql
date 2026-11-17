@@ -6,6 +6,12 @@
 -- La legge e la scrive solo la funzione `narratore` (chiave di servizio):
 -- nessuna regola di accesso per gli account, quindi dal gioco non si tocca.
 
+-- Pulizia: tabelle e funzione di una versione precedente del narratore (se ci sono).
+-- Contenevano solo missioni in cache e contatori, nessun dato dei giocatori.
+drop function if exists public.narratore_conta (date, text, integer);
+drop table if exists public.narratore_cache;
+drop table if exists public.narratore_uso;
+
 create table if not exists public.narratore (
   gruppo text not null,
   chiave text not null,
