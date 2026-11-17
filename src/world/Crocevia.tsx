@@ -15,6 +15,7 @@ import { PropOr } from '../player/models';
 import { SkyBand } from './SkyBand';
 import { SURFACES } from './textures';
 import { Icon } from '../ui/Icon';
+import { fadeByDistance } from './nearLabel';
 
 /** Rumore ripetibile per posizione: i vertici condivisi restano attaccati. */
 function hash3(x: number, y: number, z: number): number {
@@ -238,8 +239,10 @@ function ClassAltar({ cls, x, z, quality }: { cls: ClassId; x: number; z: number
     [info.color],
   );
 
+  const label = useRef<HTMLDivElement>(null);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
+    fadeByDistance(label.current, x, z);
     const m = emblem.current;
     if (!m) return;
     m.rotation.y = t * (mine ? 1.6 : 0.7);
@@ -269,7 +272,7 @@ function ClassAltar({ cls, x, z, quality }: { cls: ClassId; x: number; z: number
       <mesh ref={emblem} geometry={geo} material={mat} position={[0, 1.75, 0]} castShadow />
       {mine && quality !== 'bassa' && <pointLight position={[0, 1.8, 0]} color={info.color} intensity={4} distance={6} />}
       <Html position={[0, 2.55, 0]} center distanceFactor={7} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
-        <div className={`altar-label${taken ? ' taken' : ''}${mine ? ' mine' : ''}`} style={{ borderColor: info.color }}>
+        <div ref={label} className={`altar-label near-label${taken ? ' taken' : ''}${mine ? ' mine' : ''}`} style={{ borderColor: info.color }}>
           <Icon name={`classe-${cls}`} size={18} /> {info.name}
           {taken && <small> · {holderName ?? '…'}</small>}
           {mine && <small> · tu</small>}

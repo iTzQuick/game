@@ -6,7 +6,7 @@ import { inviteLink, leaveRoom } from '../game/session';
 import { advanceDialog, setGame, updateSettings, useGame, type Quality } from '../game/store';
 import { getRoom } from '../net/room';
 import { StatsPanel, linkLabel } from './Stats';
-import { CombatHud } from './CombatHud';
+import { CombatHud, TopStatus } from './CombatHud';
 import { Icon } from './Icon';
 import { ProgressPanels } from './ProgressPanels';
 import { runRequest } from '../world/layout';
@@ -22,11 +22,19 @@ export function Hud({ touch }: { touch: boolean }) {
 
   return (
     <div className="hud">
-      <RoomPanel />
+      {/* a sinistra: stanza, poi i messaggi (bottino, esperienza…) piccoli */}
+      <div className="top-left">
+        <RoomPanel />
+        <Toasts />
+        {showStats && <StatsPanel />}
+      </div>
       <TopButtons touch={touch} />
-      {showStats && <StatsPanel />}
+      <SideButtons />
       <CombatHud touch={touch} />
-      <Toasts />
+      {/* al centro, in alto: solo lo stato della Frattura, il boss e le combo */}
+      <div className="top-center">
+        <TopStatus />
+      </div>
       {!touch && pointerLocked && !anyMenu && <div className="crosshair" />}
       {!touch && !pointerLocked && !anyMenu && <div className="lock-hint">Clicca sul gioco per muovere la visuale con il mouse</div>}
       {!touch && <PromptHint />}
@@ -43,6 +51,7 @@ export function Hud({ touch }: { touch: boolean }) {
 function RoomPanel() {
   const room = useGame((s) => s.room);
   const selfId = useGame((s) => s.selfId);
+  const showStats = useGame((s) => s.settings.showStats);
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     const link = inviteLink(room.code);
@@ -61,12 +70,13 @@ function RoomPanel() {
   return (
     <div className="panel room-panel">
       <div className="room-head">
+        <span className={`mode-dot ${room.mode}`} title={room.mode === 'online' ? 'Online' : 'Locale (solo questo browser)'} />
         <span className="room-code" title="Codice della stanza">
           {room.code}
         </span>
-        <span className={`badge ${room.mode}`}>{room.mode === 'online' ? 'online' : 'locale'}</span>
-        <button className="small" onClick={copy}>
-          {copied ? 'Copiato!' : 'Invita'}
+        <span className="room-grado">Grado {room.grado}</span>
+        <button className="small invite" onClick={copy} title="Invita: copia o condividi il link">
+          {copied ? '✓' : 'Invita'}
         </button>
       </div>
       <ul className="players">
@@ -76,14 +86,15 @@ function RoomPanel() {
           return (
             <li key={m.id} className={m.id === selfId ? 'me' : ''}>
               <span className="cls-dot" style={{ background: cls ? CLASSES[cls].color : '#5d5868' }}>
-                {cls ? <Icon name={`classe-${cls}`} size={22} /> : '?'}
+                {cls ? <Icon name={`classe-${cls}`} size={16} /> : '?'}
               </span>
-              <span className="pname">
-                {m.name}
-                {m.id === selfId && <small> (tu)</small>}
-              </span>
-              {room.hostId === m.id && <span title="Host: calcola nemici e bottino">👑</span>}
-              {peer && (
+              <span className="pname">{m.name}</span>
+              {room.hostId === m.id && (
+                <span className="host" title="Host: calcola nemici e bottino">
+                  👑
+                </span>
+              )}
+              {showStats && peer && (
                 <small className={`link ${peer.link}`}>
                   {linkLabel(peer.link)}
                   {peer.rtt !== null ? ` ${peer.rtt}ms` : ''}
@@ -93,36 +104,14 @@ function RoomPanel() {
           );
         })}
       </ul>
-      <div className="muted small-text">
-        {room.members.length}/4 giocatori · Grado {room.grado}
-        {room.best > 0 && <> · record {room.best}</>}
-      </div>
     </div>
   );
 }
 
 function TopButtons({ touch }: { touch: boolean }) {
   const canFullscreen = touch && typeof document !== 'undefined' && document.fullscreenEnabled;
-  const isHost = useGame((s) => s.room.hostId === s.selfId);
-  const inRun = useGame((s) => !!s.room.run && s.room.run.phase !== 'complete');
   return (
     <div className="top-buttons">
-      {isHost && inRun && (
-        <button className="danger" onClick={() => runRequest('abandon')} title="Solo l'host: tutti tornano al Crocevia">
-          Abbandona
-        </button>
-      )}
-      <button onClick={() => setGame((s) => ({ panel: s.panel === 'personaggio' ? null : 'personaggio' }))} title="Personaggio e talenti (P)">
-        <span aria-hidden>👤</span>
-        <span className="btn-label"> Personaggio</span>
-      </button>
-      <button onClick={() => setGame((s) => ({ panel: s.panel === 'zaino' ? null : 'zaino' }))} title="Zaino (I)">
-        <span aria-hidden>🎒</span>
-        <span className="btn-label"> Zaino</span>
-      </button>
-      <button onClick={() => setGame((s) => ({ classPicker: !s.classPicker }))} title="Classe (C)">
-        Classe
-      </button>
       <button onClick={() => setGame({ helpOpen: true })} title="Comandi">
         ?
       </button>
@@ -144,11 +133,46 @@ function TopButtons({ touch }: { touch: boolean }) {
   );
 }
 
+/** Personaggio, Zaino e Classe: solo icone, in colonna sotto "Esci". */
+function SideButtons() {
+  const cls = useGame((s) => s.room.classes[s.selfId] ?? null);
+  const isHost = useGame((s) => s.room.hostId === s.selfId);
+  const inRun = useGame((s) => !!s.room.run && s.room.run.phase !== 'complete');
+  return (
+    <div className="side-buttons">
+      <button
+        className="icon-btn"
+        onClick={() => setGame((s) => ({ panel: s.panel === 'personaggio' ? null : 'personaggio' }))}
+        title="Personaggio e talenti (P)"
+        aria-label="Personaggio e talenti"
+      >
+        <span aria-hidden>👤</span>
+      </button>
+      <button className="icon-btn" onClick={() => setGame((s) => ({ panel: s.panel === 'zaino' ? null : 'zaino' }))} title="Zaino (I)" aria-label="Zaino">
+        <span aria-hidden>🎒</span>
+      </button>
+      <button className="icon-btn" onClick={() => setGame((s) => ({ classPicker: !s.classPicker }))} title="Classe (C)" aria-label="Classe">
+        {cls ? <Icon name={`classe-${cls}`} size={30} /> : <span aria-hidden>✦</span>}
+      </button>
+      {isHost && inRun && (
+        <button
+          className="icon-btn danger"
+          onClick={() => runRequest('abandon')}
+          title="Abbandona la Frattura (solo l'host: tutti tornano al Crocevia)"
+          aria-label="Abbandona la Frattura"
+        >
+          <span aria-hidden>🏳</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Toasts() {
   const toasts = useGame((s) => s.toasts);
   return (
     <div className="toasts">
-      {toasts.map((t) => (
+      {toasts.slice(-3).map((t) => (
         <div key={t.id} className="toast">
           {t.text}
         </div>

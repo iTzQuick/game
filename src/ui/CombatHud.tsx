@@ -34,7 +34,6 @@ export function CombatHud({ touch }: { touch: boolean }) {
   usePoll(100);
   const run = useGame((s) => s.room.run);
   const cls = useGame((s) => s.room.classes[s.selfId] ?? null);
-  const combo = useGame((s) => s.combo);
   const level = useProgress((s) => (cls ? classProgress(s.save, cls).level : 1));
   const inRun = !!run && run.phase !== 'countdown';
   const m = combat.me;
@@ -42,14 +41,7 @@ export function CombatHud({ touch }: { touch: boolean }) {
 
   return (
     <>
-      {run && <RunBanner />}
-      {inRun && <BossBar />}
-      {combo && (
-        <div className="combo-banner" key={combo.t0}>
-          <small>COMBO</small>
-          {combo.name}
-        </div>
-      )}
+      {run?.phase === 'countdown' && <RunCountdown />}
       {inRun && (
         <div className={`vitals${touch ? ' touch' : ''}`}>
           <div className="hp-bar">
@@ -87,7 +79,8 @@ export function CombatHud({ touch }: { touch: boolean }) {
   );
 }
 
-function RunBanner() {
+/** Il conto alla rovescia resta al centro: è un momento solo, e dura 5 secondi. */
+function RunCountdown() {
   const run = useGame((s) => s.room.run)!;
   const seenAt = useRef(0);
   const runId = useRef(-1);
@@ -95,38 +88,57 @@ function RunBanner() {
     runId.current = run.id;
     seenAt.current = performance.now();
   }
-  if (run.phase === 'countdown') {
-    const left = Math.max(1, Math.ceil((5000 - (performance.now() - seenAt.current)) / 1000));
-    return (
-      <div className="run-countdown">
-        <b>La Frattura si apre</b>
-        <span className="count">{left}</span>
-        <small>
-          Grado {run.grado}
-          {run.mods.length ? ` · ${run.mods.map((m) => MODS[m].name).join(' · ')}` : ''}
-        </small>
-      </div>
-    );
-  }
+  const left = Math.max(1, Math.ceil((5000 - (performance.now() - seenAt.current)) / 1000));
+  return (
+    <div className="run-countdown">
+      <b>La Frattura si apre</b>
+      <span className="count">{left}</span>
+      <small>
+        Grado {run.grado}
+        {run.mods.length ? ` · ${run.mods.map((m) => MODS[m].name).join(' · ')}` : ''}
+      </small>
+    </div>
+  );
+}
+
+/**
+ * La colonna piccola in alto al centro: stato della Frattura in una riga,
+ * barra del boss sottile, combo. Sotto ci vanno i messaggi (Hud).
+ */
+export function TopStatus() {
+  usePoll(150);
+  const run = useGame((s) => s.room.run);
+  const combo = useGame((s) => s.combo);
+  const inRun = !!run && run.phase !== 'countdown';
+  return (
+    <>
+      {inRun && run && <RunLine />}
+      {inRun && <BossBar />}
+      {combo && (
+        <div className="combo-banner" key={combo.t0}>
+          <small>COMBO</small> {combo.name}
+        </div>
+      )}
+    </>
+  );
+}
+
+function RunLine() {
+  const run = useGame((s) => s.room.run)!;
   const total = combatRoomCount(run.grado) + 1;
   const done = Math.min(total, run.cleared - 1);
   const bossFight = run.fight === total;
   return (
     <div className="run-info">
-      <b>Frattura · Grado {run.grado}</b>
       <span>
-        {run.phase === 'complete' ? 'Completata' : bossFight ? 'Stanza del boss' : `Stanze ripulite ${done}/${total}`}
-        {run.fight >= 0 && <em> · combattimento</em>}
+        Grado {run.grado} · {run.phase === 'complete' ? 'completata' : bossFight ? 'boss' : `stanze ${done}/${total}`}
+        {run.fight >= 0 && run.phase !== 'complete' && <em> · combattimento</em>}
       </span>
-      {run.mods.length > 0 && (
-        <span className="mods">
-          {run.mods.map((m) => (
-            <i key={m} title={MODS[m].desc}>
-              {MODS[m].name}
-            </i>
-          ))}
-        </span>
-      )}
+      {run.mods.map((m) => (
+        <i key={m} className="mod" title={MODS[m].desc}>
+          {MODS[m].name}
+        </i>
+      ))}
     </div>
   );
 }

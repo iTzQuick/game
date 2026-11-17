@@ -10,6 +10,7 @@ import { BUILDINGS, BUILDING_RADIUS, type BuildingDef } from '../progress/defs';
 import { useGame } from '../game/store';
 import { stone } from '../player/materials';
 import { PropOr } from '../player/models';
+import { fadeByDistance } from './nearLabel';
 
 export function Buildings() {
   return (
@@ -31,8 +32,10 @@ function Building({ def }: { def: BuildingDef }) {
     [def.color],
   );
   const spin = useRef<THREE.Group>(null);
+  const label = useRef<HTMLDivElement>(null);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
+    fadeByDistance(label.current, x, z, 10);
     glow.opacity = built ? 0.85 : 0.25 + Math.sin(t * 1.5 + def.angle) * 0.12;
     if (spin.current) spin.current.rotation.y = t * 0.6;
   });
@@ -72,7 +75,7 @@ function Building({ def }: { def: BuildingDef }) {
         </group>
       )}
       <Html position={[0, built ? 3.6 : def.later ? 4.4 : 2, 0]} center distanceFactor={10} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
-        <div className={`altar-label${built ? ' mine' : ''}`} style={{ borderColor: def.color, color: built ? def.color : undefined }}>
+        <div ref={label} className={`altar-label near-label${built ? ' mine' : ''}`} style={{ borderColor: def.color, color: built ? def.color : undefined }}>
           {def.name}
           {!built && <small> · {def.later ? 'presto' : `${progress}/${def.cost}`}</small>}
         </div>
