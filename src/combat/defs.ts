@@ -124,6 +124,7 @@ export const EF = {
   veiled: 8,
   enraged: 16,
   pulled: 32,
+  elite: 64,
 } as const;
 
 // --- Fratture -------------------------------------------------------------------

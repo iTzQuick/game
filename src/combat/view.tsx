@@ -5,9 +5,11 @@ import { Billboard } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { spawnPuff, spawnRing } from '../fx/effects';
+import { spawnPuff, spawnRing, spawnSparks } from '../fx/effects';
+import { sfx } from '../audio/sfx';
 import { EF, ENEMIES, isBoss, type EnemyType } from './defs';
-import { combat, setDeathFx, type CZone } from './runtime';
+import { hitStop, shake } from './feel';
+import { DYING_MS, combat, setDeathFx, setTrapFx, type CZone } from './runtime';
 import { ENEMY_MODELS, newCtrl } from '../player/RiggedModel';
 import { ModelOr } from '../player/models';
 
@@ -24,8 +26,27 @@ const ENEMY_COLORS: Record<EnemyType, { body: string; eye: string }> = {
 };
 
 setDeathFx((x, z, type) => {
-  spawnPuff(x, 1, z, ENEMY_COLORS[type].eye);
-  spawnRing(x, z, ENEMY_COLORS[type].eye, isBoss(type) ? 8 : 2.2, 0.5);
+  const boss = isBoss(type);
+  const c = ENEMY_COLORS[type].eye;
+  spawnPuff(x, 1, z, c);
+  spawnRing(x, z, c, boss ? 8 : 2.6, boss ? 0.9 : 0.5);
+  spawnSparks(x, boss ? 2 : 1, z, c, boss ? 60 : 16, boss ? 2.2 : 1.1);
+  sfx.death(boss);
+  // la scossa si sente solo se si è vicini; il boss scuote tutti
+  const p = combat.selfPos;
+  const d = Math.hypot(x - p.x, z - p.z);
+  if (boss) {
+    shake(0.9);
+    hitStop(220);
+  } else if (d < 10) shake(0.14 * (1 - d / 10) + 0.04);
+});
+
+// le spine: schegge che saltano su dal pavimento e un anello rosso
+setTrapFx((x, z, r) => {
+  spawnRing(x, z, '#ff6b6b', r, 0.35);
+  spawnSparks(x, 0.1, z, '#ffb0a0', 12, 1.2);
+  const p = combat.selfPos;
+  if (Math.hypot(x - p.x, z - p.z) < 6) sfx.hit(0.6, false);
 });
 
 /** Ridisegna la lista quando cambiano gli id (non a ogni frame). */
@@ -41,7 +62,8 @@ function useIds<T>(read: () => T[], every = 150): T[] {
   return ids;
 }
 
-const readEnemyIds = () => [...combat.enemies.keys()].sort((a, b) => a - b);
+// anche i nemici appena sconfitti, che restano un attimo per cadere e svanire
+const readEnemyIds = () => [...combat.enemies.keys(), ...combat.dying.keys()].sort((a, b) => a - b);
 const readZoneIds = () => [...combat.zones.keys()].sort();
 
 export function CombatView() {
@@ -65,7 +87,7 @@ export function CombatView() {
 // --- nemici -------------------------------------------------------------------
 
 function EnemyMesh({ id }: { id: number }) {
-  const type = combat.enemies.get(id)?.type ?? 'ombra';
+  const type = combat.enemies.get(id)?.type ?? combat.dying.get(id)?.e.type ?? 'ombra';
   const def = ENEMIES[type];
   const root = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -75,6 +97,12 @@ function EnemyMesh({ id }: { id: number }) {
   const markRef = useRef<THREE.Mesh>(null);
   const tauntRef = useRef<THREE.Mesh>(null);
   const last = useRef({ x: 0, z: 0, speed: 0 });
+  /** contraccolpo: direzione del colpo (nel mondo) e quando è arrivato */
+  const recoilRef = useRef<THREE.Group>(null);
+  /** aura dorata del Campione e barra della vita sopra la testa */
+  const eliteRef = useRef<THREE.Group>(null);
+  const barRef = useRef<THREE.Group>(null);
+  const hitRef = useRef({ flash: 0, t0: -1e9, dx: 0, dz: -1 });
   // modello 3D animato (Higgsfield) per i tipi che ce l'hanno
   const modelDef = ENEMY_MODELS[type];
   const [modelReady, setModelReady] = useState(false);
@@ -99,12 +127,28 @@ function EnemyMesh({ id }: { id: number }) {
   }, [type]);
 
   useFrame((state, dt) => {
-    const e = combat.enemies.get(id);
+    const dying = combat.dying.get(id);
+    const e = combat.enemies.get(id) ?? dying?.e;
     const g = root.current;
     if (!g || !e) return;
     g.visible = e.ready;
     if (!e.ready) return;
     const now = performance.now();
+    const hit = hitRef.current;
+    if (e.flash > hit.flash) {
+      // da dove arriva il colpo: dal giocatore più vicino
+      hit.flash = e.flash;
+      hit.t0 = now;
+      let best = Infinity;
+      for (const p of combat.renderPos.values()) {
+        const d = Math.hypot(e.x - p.x, e.z - p.z);
+        if (d < best && d > 0.01) {
+          best = d;
+          hit.dx = (e.x - p.x) / d;
+          hit.dz = (e.z - p.z) / d;
+        }
+      }
+    }
     const t = state.clock.elapsedTime;
     const moved = Math.hypot(e.x - last.current.x, e.z - last.current.z) / Math.max(dt, 0.001);
     last.current.speed += (Math.min(moved, 10) - last.current.speed) * 0.2;
@@ -168,11 +212,65 @@ function EnemyMesh({ id }: { id: number }) {
     }
     if (markRef.current) markRef.current.visible = (e.flags & EF.mark) !== 0;
     if (tauntRef.current) tauntRef.current.visible = (e.flags & EF.taunt) !== 0;
+    const elite = (e.flags & EF.elite) !== 0;
+    if (eliteRef.current) {
+      eliteRef.current.visible = elite && !dying;
+      if (elite) {
+        eliteRef.current.rotation.y = t * 0.8;
+        eliteRef.current.scale.setScalar(1 + Math.sin(t * 3) * 0.04);
+      }
+    }
+    if (barRef.current) barRef.current.position.y = headY * (elite ? ELITE_SCALE : 1) + 0.8;
     if (hpGroup.current && hpFill.current) {
       const frac = Math.max(0, e.hp / e.maxHp);
-      hpGroup.current.visible = !isBoss(type) && frac < 0.999 && !(e.flags & EF.veiled);
+      hpGroup.current.visible = !dying && !isBoss(type) && (frac < 0.999 || elite) && !(e.flags & EF.veiled);
+      (hpFill.current.material as THREE.MeshBasicMaterial).color.set(elite ? '#ffd25a' : '#ff4f6d');
       hpFill.current.scale.x = Math.max(0.001, frac);
       hpFill.current.position.x = -(1 - frac) * 0.6;
+    }
+
+    // contraccolpo e caduta: direzione del colpo nel riferimento del nemico (che è ruotato)
+    const rec = recoilRef.current;
+    if (rec) {
+      const cy = Math.cos(e.yaw);
+      const sy = Math.sin(e.yaw);
+      const lx = hit.dx * cy - hit.dz * sy;
+      const lz = hit.dx * sy + hit.dz * cy;
+      const boss = isBoss(type);
+      if (dying) {
+        const k = Math.min(1, (now - dying.t0) / DYING_MS);
+        const floats = type === 'sciame' || type === 'anguilla' || type === 'campana';
+        const fall = Math.min(1, k / 0.4);
+        const f = fall * fall;
+        const tilt = floats ? 0.5 : boss ? 1.1 : 1.45;
+        rec.rotation.set(lz * tilt * f, 0, -lx * tilt * f);
+        rec.position.set(lx * 0.4 * fall, -Math.max(0, (k - 0.45) / 0.55) * (floats ? 1.2 : 0.5), lz * 0.4 * fall);
+        const shrink = floats ? 1 - 0.6 * k : 1;
+        rec.scale.setScalar(shrink);
+        const fade = 1 - Math.max(0, (k - 0.35) / 0.65);
+        ctrl.opacity = fade;
+        ctrl.flash = k < 0.12 ? 1 : 0;
+        ctrl.charge = 0;
+        ctrl.move = 'idle';
+        if (!mats.body.transparent) {
+          mats.body.transparent = true;
+          mats.body.needsUpdate = true;
+        }
+        mats.body.opacity = fade;
+        mats.body.emissive.set(k < 0.12 ? '#ffffff' : '#000000');
+        if (stunRing.current) stunRing.current.visible = false;
+        if (markRef.current) markRef.current.visible = false;
+        if (tauntRef.current) tauntRef.current.visible = false;
+      } else {
+        const rk = Math.max(0, 1 - (now - hit.t0) / 200);
+        const amt = rk * rk * (boss ? 0.05 : type === 'bruto' ? 0.12 : 0.24);
+        rec.position.set(lx * amt, 0, lz * amt);
+        rec.rotation.set(lz * amt * 1.3, 0, -lx * amt * 1.3);
+        // schiacciato un attimo dal colpo
+        const sq = 0.09 * rk * rk;
+        rec.scale.set(1 + sq, 1 - sq, 1 + sq);
+      }
+      if (elite) rec.scale.multiplyScalar(ELITE_SCALE);
     }
   });
 
@@ -180,13 +278,15 @@ function EnemyMesh({ id }: { id: number }) {
   const headY = type === 'sciame' ? 0.9 : type === 'anguilla' ? 1.1 : 1.6 * s;
   return (
     <group ref={root} visible={false}>
-      {modelDef && (
-        <group ref={modelWrap}>
-          <ModelOr def={modelDef} ctrl={ctrl} onReady={setModelReady} />
+      <group ref={recoilRef}>
+        {modelDef && (
+          <group ref={modelWrap}>
+            <ModelOr def={modelDef} ctrl={ctrl} onReady={setModelReady} />
+          </group>
+        )}
+        <group ref={body}>
+          <EnemyBody type={type} mats={mats} s={s} />
         </group>
-      )}
-      <group ref={body}>
-        <EnemyBody type={type} mats={mats} s={s} />
       </group>
       <group ref={stunRing} position={[0, headY + 0.45, 0]} visible={false}>
         {[0, 1, 2].map((i) => (
@@ -195,7 +295,17 @@ function EnemyMesh({ id }: { id: number }) {
           </mesh>
         ))}
       </group>
-      <Billboard position={[0, headY + 0.8, 0]}>
+      <group ref={eliteRef} visible={false}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+          <ringGeometry args={[def.radius * 1.5, def.radius * 1.75, 6]} />
+          <meshBasicMaterial color="#ffd25a" transparent opacity={0.75} depthWrite={false} blending={THREE.AdditiveBlending} />
+        </mesh>
+        <mesh position={[0, 1.4 * s, 0]}>
+          <cylinderGeometry args={[def.radius * 1.25, def.radius * 1.45, 2.8 * s, 12, 1, true]} />
+          <meshBasicMaterial color="#ffb84a" transparent opacity={0.13} depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
+        </mesh>
+      </group>
+      <Billboard ref={barRef} position={[0, headY + 0.8, 0]}>
         <mesh ref={markRef} position={[-0.5, 0.3, 0]} visible={false}>
           <circleGeometry args={[0.16, 12]} />
           <meshBasicMaterial color="#ffd86b" />
@@ -226,6 +336,9 @@ function EnemyMesh({ id }: { id: number }) {
 }
 
 type EMats = { body: THREE.Material; eye: THREE.Material; glow: THREE.Material };
+
+/** Il Campione è più grosso degli altri. */
+const ELITE_SCALE = 1.35;
 
 function Eyes({ y, z, gap, r, mat }: { y: number; z: number; gap: number; r: number; mat: THREE.Material }) {
   return (
@@ -507,7 +620,7 @@ function Projectiles() {
       for (const p of combat.bolts) {
         if (n >= PB_POOL) break;
         dummy.position.set(p.x, p.y, p.z);
-        dummy.scale.setScalar(p.kind === 'dardo' ? 1.4 : 1);
+        dummy.scale.setScalar(p.kind === 'onda' ? 2.6 : p.kind === 'dardo' ? 1.4 : 1);
         dummy.updateMatrix();
         b.setMatrixAt(n, dummy.matrix);
         b.setColorAt(n, color.set(p.color));

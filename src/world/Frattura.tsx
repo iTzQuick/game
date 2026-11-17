@@ -6,7 +6,7 @@ import { Html, Sparkles, Stars } from '@react-three/drei';
 import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { CORRIDOR_WIDTH, WALL_HEIGHT, generateDungeon, wallBoxes, type Dungeon } from '../combat/dungeon';
+import { CORRIDOR_WIDTH, VARIANT_INFO, WALL_HEIGHT, generateDungeon, wallBoxes, type DRoom, type Dungeon } from '../combat/dungeon';
 import { useGame, type Quality } from '../game/store';
 import type { RunState } from '../net/roomLogic';
 import { SkyBand } from './SkyBand';
@@ -66,6 +66,17 @@ export function Frattura({ quality }: { quality: Quality }) {
       {d.corridors.map((c) => (
         <Gate key={c.i} x={c.x} z={c.rect.z1} open={run.cleared > c.i} tint={tints[(c.i + 1) % tints.length]} />
       ))}
+      {/* sopra la porta: che cosa c'è nella stanza dopo (solo la prossima da affrontare) */}
+      {d.corridors
+        .filter((c) => c.i + 1 >= run.cleared && c.i + 1 <= run.cleared + 1)
+        .map((c) => (
+          <DoorSign key={`s${c.i}`} x={c.x} z={c.rect.z1} room={d.rooms[c.i + 1]} />
+        ))}
+      {d.rooms
+        .filter((r) => r.variant === 'tesoro')
+        .map((r) => (
+          <Chest key={`t${r.i}`} room={r} open={run.cleared > r.i} />
+        ))}
       {d.rooms.map((r) => (
         <RoomDecor key={r.i} d={d} i={r.i} quality={quality} active={run.fight === r.i} tints={tints} />
       ))}
@@ -180,6 +191,100 @@ function Gate({ x, z, open, tint }: { x: number; z: number; open: boolean; tint:
       <mesh material={mat} position={[0, WALL_HEIGHT / 2, 0]}>
         <planeGeometry args={[CORRIDOR_WIDTH, WALL_HEIGHT]} />
       </mesh>
+    </group>
+  );
+}
+
+/** Cartello sopra la porta: il simbolo e il nome della stanza che segue. */
+function DoorSign({ x, z, room }: { x: number; z: number; room: DRoom }) {
+  const special = room.kind === 'boss' || (room.variant && room.variant !== 'normale');
+  const tex = useMemo(() => {
+    if (!special) return null;
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 192;
+    const g = c.getContext('2d')!;
+    const info = room.kind === 'boss' ? { glyph: '☠', name: 'Il guardiano della Frattura' } : VARIANT_INFO[room.variant!];
+    g.fillStyle = 'rgba(12, 8, 24, 0.82)';
+    g.beginPath();
+    g.roundRect(8, 8, 496, 176, 36);
+    g.fill();
+    g.strokeStyle = room.kind === 'boss' ? '#ff5f6d' : '#ffd25a';
+    g.lineWidth = 6;
+    g.stroke();
+    g.fillStyle = room.kind === 'boss' ? '#ff8a94' : '#ffd25a';
+    g.font = '96px Georgia, serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(info.glyph, 96, 100);
+    g.fillStyle = '#ece6ff';
+    g.font = '40px Georgia, serif';
+    g.textAlign = 'left';
+    const words = info.name;
+    g.fillText(words.length > 16 ? words.slice(0, 16) + '…' : words, 170, 100);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, [room, special]);
+  const ref = useRef<THREE.Sprite>(null);
+  useFrame(({ clock }) => {
+    if (ref.current) ref.current.position.y = WALL_HEIGHT + 1.3 + Math.sin(clock.elapsedTime * 2) * 0.06;
+  });
+  if (!tex) return null;
+  return (
+    <sprite ref={ref} position={[x, WALL_HEIGHT + 1.3, z]} scale={[2.6, 0.975, 1]}>
+      <spriteMaterial map={tex} transparent depthWrite={false} toneMapped={false} />
+    </sprite>
+  );
+}
+
+/** Il forziere della stanza del Tesoro: si apre quando ci si avvicina (lo decide l'host). */
+function Chest({ room, open }: { room: DRoom; open: boolean }) {
+  const lid = useRef<THREE.Group>(null);
+  const glow = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }, dt) => {
+    const l = lid.current;
+    if (l) l.rotation.x += ((open ? -1.9 : 0) - l.rotation.x) * Math.min(1, dt * 6);
+    if (glow.current) {
+      const m = glow.current.material as THREE.MeshBasicMaterial;
+      m.opacity = open ? 0.35 + Math.sin(clock.elapsedTime * 4) * 0.1 : 0.12 + Math.sin(clock.elapsedTime * 2) * 0.05;
+      glow.current.scale.y = open ? 1 : 0.3;
+    }
+  });
+  return (
+    <group position={[room.cx, 0, room.cz]} rotation={[0, Math.PI, 0]}>
+      <RigidBody type="fixed" colliders={false}>
+        <CuboidCollider args={[0.75, 0.45, 0.5]} position={[0, 0.45, 0]} />
+      </RigidBody>
+      {/* cassa */}
+      <mesh position={[0, 0.4, 0]} castShadow>
+        <boxGeometry args={[1.5, 0.8, 1]} />
+        <meshStandardMaterial color="#5a3a22" roughness={0.8} />
+      </mesh>
+      {[-0.6, 0.6].map((x) => (
+        <mesh key={x} position={[x, 0.4, 0]}>
+          <boxGeometry args={[0.12, 0.84, 1.04]} />
+          <meshStandardMaterial color="#d9a83a" metalness={0.7} roughness={0.35} />
+        </mesh>
+      ))}
+      {/* coperchio: ruota attorno al bordo posteriore */}
+      <group ref={lid} position={[0, 0.8, -0.5]}>
+        <mesh position={[0, 0.16, 0.5]} castShadow>
+          <boxGeometry args={[1.54, 0.32, 1.04]} />
+          <meshStandardMaterial color="#6b4528" roughness={0.75} />
+        </mesh>
+        <mesh position={[0, 0.16, 1.03]}>
+          <boxGeometry args={[0.3, 0.3, 0.06]} />
+          <meshStandardMaterial color="#ffd25a" metalness={0.8} roughness={0.3} emissive="#7a5200" />
+        </mesh>
+      </group>
+      {/* luce dorata che esce */}
+      <mesh ref={glow} position={[0, 2, 0]}>
+        <cylinderGeometry args={[0.55, 0.7, 3.2, 16, 1, true]} />
+        <meshBasicMaterial color="#ffd25a" transparent opacity={0.15} depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <pointLight position={[0, 1.4, 0]} color="#ffcc66" intensity={open ? 14 : 5} distance={7} decay={1.6} />
+      <Sparkles count={18} scale={[2.2, 2, 2.2]} position={[0, 1.2, 0]} size={3} speed={0.4} color="#ffd25a" />
     </group>
   );
 }

@@ -10,6 +10,7 @@ import { CombatHud, TopStatus } from './CombatHud';
 import { Icon } from './Icon';
 import { ProgressPanels } from './ProgressPanels';
 import { VotePanel, useCittaStory } from './CittaPanel';
+import { BoonPanel, useBoonOffers } from './BoonPanel';
 import { isStandalone } from './AppShell';
 import { runRequest } from '../world/layout';
 
@@ -22,6 +23,7 @@ export function Hud({ touch }: { touch: boolean }) {
   const pointerLocked = useGame((s) => s.pointerLocked);
   const anyMenu = classPicker || settingsOpen || helpOpen || dialog !== null;
   useCittaStory();
+  useBoonOffers();
 
   return (
     <div className="hud">
@@ -47,6 +49,7 @@ export function Hud({ touch }: { touch: boolean }) {
       {helpOpen && <HelpPanel touch={touch} />}
       <ProgressPanels />
       <VotePanel />
+      <BoonPanel />
       {/* dall'icona in Home c'è già la schermata "gira il telefono" (AppShell) */}
       {touch && !isStandalone() && <OrientationHint />}
     </div>
@@ -314,6 +317,21 @@ function SettingsPanel() {
             value={settings.sensitivity}
             onChange={(e) => updateSettings({ sensitivity: Number(e.target.value) })}
           />
+        </label>
+        <label className="row">
+          <span>Volume dei suoni</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={settings.sound}
+            onChange={(e) => updateSettings({ sound: Number(e.target.value) })}
+          />
+        </label>
+        <label className="row">
+          <span>Scossa della telecamera sui colpi forti</span>
+          <input type="checkbox" checked={settings.shake} onChange={(e) => updateSettings({ shake: e.target.checked })} />
         </label>
         <label className="row">
           <span>Controlli touch</span>

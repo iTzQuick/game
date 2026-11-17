@@ -73,6 +73,8 @@ export interface RunState {
   mondo?: Mondo | null;
   /** Boss in fondo (se non è l'Eco). */
   boss?: EnemyType;
+  /** Prova a tempo in corso: quando scade (Date.now, uguale per tutti). */
+  prova?: number | null;
 }
 
 export interface RoomState {

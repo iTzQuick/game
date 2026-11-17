@@ -7,8 +7,8 @@
 import { getRoom } from '../net/room';
 import type { RunState } from '../net/roomLogic';
 import { emitCombat, onCombat } from './bus';
-import { ENEMY_TYPES, WAVE_POOLS, pickMods, rng, scaling } from './defs';
-import { generateDungeon, inRect, roomAt, type Dungeon } from './dungeon';
+import { ENEMIES, ENEMY_TYPES, WAVE_POOLS, pickMods, rng, scaling } from './defs';
+import { generateDungeon, inRect, roomAt, walkable, type DRoom, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
 import { EnemySim, type Focus, type Hit, type PlayerView } from './sim';
@@ -35,6 +35,9 @@ export class HostDirector {
   private countdownEnd = 0;
   private nextWaveAt = 0;
   private wipeAt = 0;
+  /** Sala delle spine: prossima ondata di spine e spine in arrivo (per colpire i nemici). */
+  private nextTrapAt = 0;
+  private traps: { x: number; z: number; at: number }[] = [];
   private unsub: (() => void) | null = null;
 
   start() {
@@ -208,7 +211,8 @@ export class HostDirector {
   }
 
   private wavesFor(roomIndex: number, grado: number): number {
-    return this.dungeon!.rooms[roomIndex].kind === 'boss' ? 1 : grado >= 3 ? 2 : 1;
+    const r = this.dungeon!.rooms[roomIndex];
+    return r.kind === 'boss' || r.variant === 'tesoro' ? 1 : grado >= 3 ? 2 : 1;
   }
 
   private spawnWave(run: RunState, roomIndex: number, wave: number, playerCount: number, now: number) {
@@ -224,11 +228,43 @@ export class HostDirector {
       const need = m.obiettivo.quanti - m.conta;
       let wavesLeft = -wave;
       for (let r = roomIndex; r < this.dungeon.rooms.length; r++) {
-        if (this.dungeon.rooms[r].kind === 'combat') wavesLeft += this.wavesFor(r, run.grado);
+        if (this.dungeon.rooms[r].kind === 'combat' && this.dungeon.rooms[r].variant !== 'tesoro') wavesLeft += this.wavesFor(r, run.grado);
       }
       return { type: m.obiettivo.nemico, min: need > 0 ? Math.ceil(need / Math.max(1, wavesLeft)) : 0, share: 0.25 };
     }
     return m.nemico ? { type: m.nemico, min: 1, share: 0.3 } : undefined;
+  }
+
+  /** Spine dal pavimento: una vicino a un giocatore, una a caso; colpiscono anche i nemici. */
+  private tickTraps(run: RunState, r: DRoom, players: PlayerView[], now: number) {
+    const sim = this.sim!;
+    // le spine arrivate fanno male anche ai nemici
+    const due = this.traps.filter((t) => t.at <= now);
+    if (due.length) {
+      this.traps = this.traps.filter((t) => t.at > now);
+      for (const t of due) {
+        for (const e of [...sim.enemies.values()]) {
+          if (e.room !== r.i || Math.hypot(e.x - t.x, e.z - t.z) > TRAP.radius + ENEMIES[e.type].radius) continue;
+          for (const ev of sim.applyHit('', { e: e.id, d: TRAP.enemyDmg * (1 + 0.15 * (run.grado - 1)) }, now)) emitCombat(ev);
+        }
+      }
+    }
+    if (now < this.nextTrapAt) return;
+    this.nextTrapAt = now + TRAP.every;
+    const alive = players.filter((p) => p.alive && inRect(r.rect, p.x, p.z));
+    const spots: [number, number][] = [];
+    if (alive.length) {
+      const p = alive[Math.floor(Math.random() * alive.length)];
+      const a = Math.random() * Math.PI * 2;
+      const d = Math.random() * 2.5;
+      spots.push([p.x + Math.sin(a) * d, p.z + Math.cos(a) * d]);
+    }
+    spots.push([r.rect.x0 + 2 + Math.random() * (r.w - 4), r.rect.z0 + 2 + Math.random() * (r.d - 4)]);
+    for (const [x, z] of spots) {
+      if (!walkable(this.dungeon!, x, z, 0.4)) continue;
+      emitCombat({ t: 'ea', id: 0, k: 'circle', x, z, r: 0, rad: TRAP.radius, arc: 0, d: TRAP.warn, dmg: TRAP.playerDmg(run.grado) });
+      this.traps.push({ x, z, at: now + TRAP.warn });
+    }
   }
 
   private progress(run: RunState, players: PlayerView[], now: number) {
@@ -248,10 +284,14 @@ export class HostDirector {
       const target = d.rooms[idx];
       if (players.some((p) => p.alive && inRect(target.rect, p.x, p.z, 1.2))) {
         this.spawnWave(run, idx, 0, room.admittedIds.length, now);
-        this.updateRun({ fight: idx, wave: 0 });
+        // la Prova a tempo: il conto alla rovescia parte entrando (Date.now: è lo stesso orologio per tutti)
+        const prova = target.variant === 'prova' ? Date.now() + provaSeconds(run.grado) * 1000 : null;
+        this.updateRun({ fight: idx, wave: 0, prova });
+        this.nextTrapAt = now + 1200;
       }
       return;
     }
+    const fightRoom = d.rooms[run.fight];
 
     // sconfitta di gruppo: tutti a terra
     if (players.length && players.every((p) => !p.alive)) {
@@ -259,11 +299,19 @@ export class HostDirector {
       else if (now >= this.wipeAt) {
         this.wipeAt = 0;
         sim.clear();
-        this.updateRun({ fight: -1, wave: 0, wipes: run.wipes + 1 });
+        this.traps = [];
+        this.updateRun({ fight: -1, wave: 0, wipes: run.wipes + 1, prova: null });
       }
       return;
     }
     this.wipeAt = 0;
+
+    // Tesoro: niente nemici, si apre avvicinandosi al forziere
+    if (fightRoom.variant === 'tesoro') {
+      if (!players.some((p) => p.alive && Math.hypot(p.x - fightRoom.cx, p.z - fightRoom.cz) < CHEST_RADIUS)) return;
+    }
+    // Sala delle spine: escono dal pavimento finché ci sono nemici
+    if (fightRoom.variant === 'trappole') this.tickTraps(run, fightRoom, players, now);
 
     if (sim.aliveIn(run.fight) > 0) return;
     if (run.wave + 1 < this.wavesFor(run.fight, run.grado)) {
@@ -277,12 +325,23 @@ export class HostDirector {
     }
     // stanza ripulita: bottino per ognuno, deciso dall'host
     const last = run.fight === d.rooms.length - 1;
+    const v = fightRoom.variant ?? 'normale';
+    // Campione e Tesoro: un oggetto almeno raro; Prova superata: un oggetto raro in più
+    const better = v === 'campione' || v === 'tesoro';
+    const provaOk = v === 'prova' && !!run.prova && Date.now() <= run.prova;
+    this.traps = [];
     for (const id of room.admittedIds) {
       const items = last
         ? [generateItem(Math.random, run.grado, 2), generateItem(Math.random, run.grado)]
-        : [generateItem(Math.random, run.grado)];
-      emitCombat({ t: 'loot', items, frags: last ? FRAGMENTS.boss(run.grado) : FRAGMENTS.room(run.grado) }, { to: id });
+        : [generateItem(Math.random, run.grado, better ? 1 : undefined)];
+      const frags = last ? FRAGMENTS.boss(run.grado) : Math.round(FRAGMENTS.room(run.grado) * (v === 'tesoro' ? 2 : 1));
+      emitCombat({ t: 'loot', items, frags, from: v === 'tesoro' ? 'Il forziere' : v === 'campione' ? 'Il Campione' : undefined }, { to: id });
       noteRareLoot(id, items);
+      if (provaOk) {
+        const bonus = [generateItem(Math.random, run.grado, 1)];
+        emitCombat({ t: 'loot', items: bonus, frags: FRAGMENTS.room(run.grado), from: 'Prova superata' }, { to: id });
+        noteRareLoot(id, bonus);
+      }
     }
     // missione del giorno: si decide quando l'Eco cade
     const cur = room.roomState.run?.missione;
@@ -300,13 +359,23 @@ export class HostDirector {
       const missione = s.run.missione && esito ? { ...s.run.missione, esito } : s.run.missione;
       return {
         ...s,
-        run: { ...s.run, cleared: run.fight + 1, fight: -1, wave: 0, phase: last ? 'complete' : 'active', missione },
+        run: { ...s.run, cleared: run.fight + 1, fight: -1, wave: 0, phase: last ? 'complete' : 'active', missione, prova: null },
         grado: last ? run.grado + 1 : s.grado,
         best: last ? Math.max(s.best ?? 0, run.grado) : s.best,
       };
     });
   }
 }
+
+/** Secondi della Prova a tempo: un po' di più ai Gradi alti, dove i nemici resistono di più. */
+export function provaSeconds(grado: number): number {
+  return Math.round(40 + 3 * Math.min(10, grado - 1));
+}
+
+/** Distanza dal forziere per aprirlo. */
+export const CHEST_RADIUS = 2.4;
+/** Le spine: raggio, preavviso e danni (ai giocatori crescono con il Grado). */
+export const TRAP = { radius: 1.6, warn: 1100, every: 1300, playerDmg: (grado: number) => Math.round(9 + 3 * grado), enemyDmg: 30 };
 
 /** I bottini leggendari (e oltre) finiscono nel diario della compagnia. */
 function noteRareLoot(playerId: string, items: Item[]) {

@@ -59,6 +59,15 @@ async function openPlayer(context, name, { code, quality = 'bassa', extra = {} }
   });
   await page.addInitScript((q) => {
     localStorage.setItem('fratture.settings', JSON.stringify({ quality: q, touch: 'off' }));
+    // dopo ogni stanza ripulita si sceglie un potere: qui si prende il primo, come farebbe un giocatore
+    window.__poteriScelti = 0;
+    setInterval(() => {
+      const card = document.querySelector('.boon-card');
+      if (card) {
+        card.click();
+        window.__poteriScelti++;
+      }
+    }, 400);
   }, quality);
   // Senza scheda video, le finestre con i modelli 3D scendono a pochi fotogrammi al
   // secondo e si bloccano mentre li preparano: qui si usano le forme semplici, e i
@@ -249,6 +258,12 @@ async function fratturaTests(browser) {
   );
   check(xp.every((x) => x > 1000), 'nemici e stanze danno esperienza alla classe in uso');
 
+  // poteri della Frattura: dopo la stanza ognuno ne sceglie uno (qui lo sceglie lo script)
+  const boons = await Promise.all(
+    [B, C].map((p) => waitFor(p, () => window.__poteriScelti >= 1 && Object.keys(window.__fratture.myBoons()).length + (window.__fratture.combat.me.potions > 0 ? 1 : 0) > 0, null, 6000)),
+  );
+  check(boons.every(Boolean), 'a stanza ripulita ognuno sceglie un potere della Frattura');
+
   // il boss: si salta alla stanza finale
   await g(B, () => {
     const r = window.__fratture.getRoom();
@@ -308,9 +323,17 @@ async function fratturaTests(browser) {
   let sawVarco = false;
   for (const p of four) {
     await p.click('canvas').catch(() => {});
-    await g(p, () => {
-      window.__fratture.combat.me.ultra = 100;
+    // qui si provano le abilità, non la resistenza: chi è a terra si rialza e per un attimo non subisce colpi
+    const wasDown = await g(p, () => {
+      const c = window.__fratture.combat;
+      const down = !c.alive;
+      c.reviveMe(1);
+      c.me.hp = c.me.maxHp;
+      c.me.invulnUntil = performance.now() + 4000;
+      c.me.ultra = 100;
+      return down;
     });
+    if (wasDown) console.log('  (era a terra prima della prova: rialzato)');
     for (const k of ['q', 'e', 'r', 'f']) {
       await p.keyboard.press(k);
       await sleep(150);

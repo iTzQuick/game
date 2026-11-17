@@ -11,7 +11,7 @@ const handlers = new Set<Handler>();
 
 const COMBAT_TYPES = new Set([
   'en', 'ea', 'epj', 'ecancel', 'edie', 'hit', 'zone', 'zlit', 'ab', 'heal', 'bless', 'alba', 'combo', 'runreq',
-  'loot', 'contrib', 'contribok', 'mfail', 'voto',
+  'loot', 'contrib', 'contribok', 'mfail', 'voto', 'bots',
 ]);
 
 export function isCombatMsg(m: { t: string }): m is CombatMsg {
@@ -32,6 +32,13 @@ export function dispatchCombat(from: string, msg: CombatMsg) {
 export function emitCombat(msg: CombatMsg, opts: { to?: string; unreliable?: boolean; skipSelf?: boolean } = {}) {
   const room = getRoom();
   const self = getGame().selfId;
+  // i compagni guidati dal computer vivono sull'host: i messaggi per loro vanno lì
+  const to = opts.to?.startsWith('ia-') ? (room?.hostId ?? self) : opts.to;
+  if (to !== opts.to) {
+    if (to === self) dispatchCombat(self, msg);
+    else if (room && to) room.sendEvent(msg, to);
+    return;
+  }
   if (room) {
     if (opts.to) {
       if (opts.to !== self) room.sendEvent(msg, opts.to);
