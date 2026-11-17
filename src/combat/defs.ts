@@ -57,8 +57,12 @@ export const AB = {
 
 // --- Nemici -------------------------------------------------------------------
 
-export type EnemyType = 'ombra' | 'sciame' | 'riflesso' | 'bruto' | 'velato' | 'eco';
-export const ENEMY_TYPES: EnemyType[] = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato', 'eco'];
+export type EnemyType = 'ombra' | 'sciame' | 'riflesso' | 'bruto' | 'velato' | 'eco' | 'annegato' | 'anguilla' | 'campana';
+/** L'ordine conta: nelle istantanee viaggia l'indice. I nuovi tipi si aggiungono in fondo. */
+export const ENEMY_TYPES: EnemyType[] = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato', 'eco', 'annegato', 'anguilla', 'campana'];
+
+/** I boss: l'Eco della Frattura e, nella Città Sommersa, La Campana. */
+export const isBoss = (t: EnemyType) => t === 'eco' || t === 'campana';
 
 export type AttackShape = 'cone' | 'circle';
 
@@ -81,6 +85,10 @@ export interface EnemyDef {
   keepAway?: number;
   projSpeed?: number;
   cost: number;
+  /** a fine preavviso scatta in avanti di tanti metri (l'Anguilla) */
+  lunge?: number;
+  /** ossigeno tolto a chi viene colpito (Città Sommersa) */
+  oxygen?: number;
 }
 
 export const ENEMIES: Record<EnemyType, EnemyDef> = {
@@ -90,6 +98,16 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
   bruto: { name: 'Bruto', hp: 200, speed: 2.4, radius: 1.0, range: 3.0, windup: 1.1, recover: 1.4, dmg: 26, attack: 'slam', hitRadius: 3.4, hitArc: 0, cost: 4 },
   velato: { name: 'Velato', hp: 45, speed: 4.2, radius: 0.45, range: 2.0, windup: 0.5, recover: 0.9, dmg: 14, attack: 'melee', hitRadius: 2.4, hitArc: 1.8, cost: 2 },
   eco: { name: 'L’Eco della Frattura', hp: 1400, speed: 3.4, radius: 1.2, range: 4, windup: 0.8, recover: 1.1, dmg: 22, attack: 'boss', hitRadius: 4.4, hitArc: 2.4, projSpeed: 9, cost: 0 },
+  // Città Sommersa
+  annegato: { name: 'Annegato', hp: 85, speed: 2.7, radius: 0.5, range: 2.0, windup: 0.7, recover: 1.1, dmg: 11, attack: 'melee', hitRadius: 2.4, hitArc: 1.7, cost: 2, oxygen: 20 },
+  anguilla: { name: 'Anguilla d’ombra', hp: 38, speed: 6.2, radius: 0.45, range: 4.5, windup: 0.5, recover: 1.3, dmg: 12, attack: 'melee', hitRadius: 5.2, hitArc: 0.55, cost: 2, lunge: 3.6 },
+  campana: { name: 'La Campana', hp: 1600, speed: 2.0, radius: 1.7, range: 5, windup: 0.9, recover: 1.25, dmg: 22, attack: 'boss', hitRadius: 5.5, hitArc: 6.3, projSpeed: 8, cost: 0, oxygen: 15 },
+};
+
+/** Nemici delle ondate per mondo (si pescano a caso: i doppioni contano di più). */
+export const WAVE_POOLS = {
+  frattura: ['sciame', 'ombra', 'ombra', 'riflesso', 'velato', 'bruto'] as EnemyType[],
+  'citta-sommersa': ['annegato', 'annegato', 'anguilla', 'anguilla', 'ombra', 'riflesso', 'sciame'] as EnemyType[],
 };
 
 /** I velati prendono metà danni finché la Rivelazione non li mostra. */

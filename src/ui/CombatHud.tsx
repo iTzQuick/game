@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CLASSES, type ClassId } from '../game/constants';
 import { useGame } from '../game/store';
 import { abilityState } from '../combat/abilities';
-import { CLASS_STATS, DOWN_SECONDS, ENEMIES, MODS, REVIVE_SECONDS } from '../combat/defs';
+import { CLASS_STATS, DOWN_SECONDS, ENEMIES, MODS, REVIVE_SECONDS, isBoss } from '../combat/defs';
 import { combatRoomCount } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
@@ -14,6 +14,7 @@ import { Icon } from './Icon';
 import { useProgress } from '../progress/store';
 import { classProgress } from '../progress/model';
 import { nomeNemico, secondiRimasti, testoObiettivo } from '../narrator/core';
+import { CITTA, OSSIGENO } from '../citta/core';
 
 /** Ridisegna il componente ~10 volte al secondo (i valori vivono fuori da React). */
 export function usePoll(ms = 100) {
@@ -52,6 +53,17 @@ export function CombatHud({ touch }: { touch: boolean }) {
               Liv. {level} · {Math.ceil(m.hp)} / {m.maxHp}
             </span>
           </div>
+          {run?.mondo === CITTA && (
+            <div className={`oxygen-bar${m.oxygen <= OSSIGENO.avviso ? ' low' : ''}`} title="Ossigeno: si ricarica nelle colonne di bolle">
+              <Icon name="ossigeno" size={18} />
+              <div className="oxygen-track">
+                <div className="oxygen-fill" style={{ width: `${(m.oxygen / OSSIGENO.max) * 100}%` }} />
+              </div>
+            </div>
+          )}
+          {run?.mondo === CITTA && m.oxygen <= OSSIGENO.avviso && combat.alive && (
+            <div className="oxygen-hint">{m.oxygen <= 0 ? 'Senza fiato! Cerca una colonna di bolle' : 'Poca aria: torna a una colonna di bolle'}</div>
+          )}
           {m.potions > 0 && (
             <div className="potions">
               <Icon name="pozione" size={20} /> {m.potions}
@@ -170,11 +182,11 @@ function RunLine() {
 }
 
 function BossBar() {
-  const boss = [...combat.enemies.values()].find((e) => e.type === 'eco');
+  const boss = [...combat.enemies.values()].find((e) => isBoss(e.type));
   if (!boss) return null;
   return (
     <div className="boss-bar">
-      <span>{ENEMIES.eco.name}</span>
+      <span>{ENEMIES[boss.type].name}</span>
       <div className="boss-track">
         <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
       </div>

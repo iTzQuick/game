@@ -2,7 +2,7 @@
 // frammenti mandati dall'host, contributi alla base.
 
 import { onCombat, emitCombat } from '../combat/bus';
-import { ENEMIES } from '../combat/defs';
+import { ENEMIES, isBoss } from '../combat/defs';
 import { CLASSES } from '../game/constants';
 import { getGame, toast, useGame } from '../game/store';
 import { getRoom } from '../net/room';
@@ -45,7 +45,7 @@ export function initRewards(): () => void {
     if (msg.t === 'edie') {
       const run = getGame().room.run;
       if (!run || run.phase === 'countdown') return;
-      const boss = msg.type === 'eco';
+      const boss = isBoss(msg.type);
       gainXp(XP.kill(ENEMIES[msg.type].cost, run.grado, boss));
       mutate((s) => {
         s.stats.kills++;

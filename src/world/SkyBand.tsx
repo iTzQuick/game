@@ -8,15 +8,17 @@ import { MODELS_ENABLED } from '../player/RiggedModel';
 import { texUrl } from './textures';
 
 const loader = new THREE.TextureLoader();
-let band: THREE.Texture | null = null;
+const bands = new Map<string, THREE.Texture>();
 let moon: THREE.Texture | null = null;
 
-function bandTexture() {
+function bandTexture(file: string) {
+  let band = bands.get(file);
   if (!band) {
-    band = loader.load(texUrl('cielo.webp'));
+    band = loader.load(texUrl(file));
     band.colorSpace = THREE.SRGBColorSpace;
     band.wrapS = THREE.RepeatWrapping;
     band.repeat.set(3, 1);
+    bands.set(file, band);
   }
   return band;
 }
@@ -33,11 +35,11 @@ function moonTexture() {
  * `dim` scurisce il cielo (nella Frattura è più cupo).
  * Il cilindro è oltre la nebbia: i materiali ignorano la nebbia.
  */
-export function SkyBand({ dim = 1, moonAt }: { dim?: number; moonAt?: [number, number, number] }) {
+export function SkyBand({ dim = 1, moonAt, file = 'cielo.webp' }: { dim?: number; moonAt?: [number, number, number]; file?: string }) {
   const bandMat = useMemo(() => {
     const c = new THREE.Color(dim, dim, dim);
-    return new THREE.MeshBasicMaterial({ map: bandTexture(), color: c, side: THREE.BackSide, fog: false, depthWrite: false });
-  }, [dim]);
+    return new THREE.MeshBasicMaterial({ map: bandTexture(file), color: c, side: THREE.BackSide, fog: false, depthWrite: false });
+  }, [dim, file]);
   const moonMat = useMemo(
     () => new THREE.MeshBasicMaterial({ map: moonTexture(), transparent: true, fog: false, depthWrite: false }),
     [],

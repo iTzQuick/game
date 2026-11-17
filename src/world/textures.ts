@@ -87,6 +87,9 @@ export const SURFACES = {
   rock: (fallback = '#2a2531') => surface('roccia.webp', 0.09, fallback),
   /** pavimento delle stanze della Frattura */
   dungeonFloor: (fallback = '#352f42', tint?: string) => surface('frattura-pavimento.webp', 0.22, fallback, tint),
+  /** Città Sommersa: selciato allagato e muri con alghe */
+  cittaFloor: (fallback = '#2f5a5e', tint?: string) => surface('citta-pavimento.webp', 0.2, fallback, tint),
+  cittaWall: (fallback = '#3d6468', tint?: string) => surface('citta-muro.webp', 0.34, fallback, tint),
   /** muri e colonne della Frattura */
   dungeonWall: (fallback = '#4a4355') => surface('frattura-muro.webp', 0.38, fallback),
 };

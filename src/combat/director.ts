@@ -7,7 +7,7 @@
 import { getRoom } from '../net/room';
 import type { RunState } from '../net/roomLogic';
 import { emitCombat, onCombat } from './bus';
-import { ENEMY_TYPES, pickMods, rng, scaling } from './defs';
+import { ENEMY_TYPES, WAVE_POOLS, pickMods, rng, scaling } from './defs';
 import { generateDungeon, inRect, roomAt, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
@@ -15,7 +15,8 @@ import { EnemySim, type Focus, type Hit, type PlayerView } from './sim';
 import { FRAGMENTS, RARITIES, generateItem, missionReward, type Item } from '../progress/defs';
 import { groupKeeper } from '../progress/group';
 import { displayName } from '../game/store';
-import { difficolta, missioneCompiuta } from '../narrator/core';
+import { difficolta, missioneCompiuta, type Missione } from '../narrator/core';
+import { CITTA, capitoloAtto, cittaAperta, progressoVuoto, puoPartire, type Capitolo } from '../citta/core';
 
 const TICK_MS = 33;
 const SNAP_HZ = 15;
@@ -101,8 +102,14 @@ export class HostDirector {
       const seed = Math.floor(Math.random() * 2 ** 31);
       room.updateRoom((s) => {
         const grado = s.grado ?? 1;
-        // una missione del giorno non ancora compiuta, oppure una Frattura normale
-        const m = missionId && !s.fatte?.includes(missionId) ? s.narrazione?.missioni.find((x) => x.id === missionId) : undefined;
+        // una missione della storia (Città Sommersa), una del giorno non ancora compiuta, oppure una Frattura normale
+        let m: Missione | undefined;
+        let cap: Capitolo | undefined;
+        if (missionId?.startsWith('atto1-')) {
+          cap = capitoloAtto(missionId);
+          if (!cap || !cittaAperta(s.gstats ?? { fratture: 0 }) || !puoPartire(cap.id, s.atto1 ?? progressoVuoto())) return s;
+          m = cap;
+        } else if (missionId && !s.fatte?.includes(missionId)) m = s.narrazione?.missioni.find((x) => x.id === missionId);
         if (missionId && !m) return s;
         const next: RunState = {
           id: s.v + 1,
@@ -115,6 +122,7 @@ export class HostDirector {
           wave: 0,
           wipes: 0,
           missione: m ? { id: m.id, titolo: m.titolo, obiettivo: m.obiettivo, nemico: m.nemico, conta: 0, fallita: false, inizio: 0 } : null,
+          ...(cap ? { mondo: CITTA, boss: cap.boss } : {}),
         };
         return { ...s, run: next };
       });
@@ -173,7 +181,8 @@ export class HostDirector {
     const players = this.players();
     if (!this.sim || this.runId !== run.id) {
       this.dungeon = generateDungeon(run.seed, run.grado);
-      this.sim = new EnemySim(this.dungeon, scaling(run.grado, room.admittedIds.length, run.mods), run.mods);
+      const opts = run.mondo === CITTA ? { boss: run.boss ?? 'eco', pool: WAVE_POOLS[CITTA] } : {};
+      this.sim = new EnemySim(this.dungeon, scaling(run.grado, room.admittedIds.length, run.mods), run.mods, opts);
       this.runId = run.id;
       // nuovo host a metà Frattura: riprende i nemici che vedeva
       for (const v of combat.enemies.values()) {

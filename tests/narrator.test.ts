@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ENEMY_TYPES, MOD_IDS, rng } from '../src/combat/defs';
+import { ENEMY_TYPES, MOD_IDS, isBoss, rng } from '../src/combat/defs';
+import { ATTO1, VOTO } from '../src/citta/core';
 import { composeWave } from '../src/combat/sim';
 import { LORE, missionReward } from '../src/progress/defs';
 import { normalizeGroup } from '../src/progress/model';
@@ -22,6 +23,9 @@ import {
   validaNarrazione,
 } from '../src/narrator/core';
 import {
+  ATTO1_MISSIONI,
+  SCELTE_CAMPANA,
+  contesto,
   GIA_NOTO,
   LIMITE_24_ORE,
   MODELLO_BATTUTE,
@@ -39,7 +43,7 @@ import { readFileSync } from 'node:fs';
 
 describe('pezzi delle missioni', () => {
   it('nemici e modificatori sono quelli del combattimento', () => {
-    expect([...NEMICI].sort()).toEqual(ENEMY_TYPES.filter((t) => t !== 'eco').sort());
+    expect([...NEMICI].sort()).toEqual(ENEMY_TYPES.filter((t) => !isBoss(t)).sort());
     expect([...MODIFICATORI].sort()).toEqual([...MOD_IDS].sort());
   });
 
@@ -343,6 +347,20 @@ describe('funzione narratore', () => {
     await rispondi(req({ azione: 'indizio', gruppo: 'ABC123', grado: 2 }), { archivio: db, claude, ora });
     expect(claude.calls).toHaveLength(1);
     expect(claude.calls[0].model).toBe(MODELLO_STORIE);
+  });
+
+  it('il narratore sa della Città Sommersa, ma il frammento di verità solo dopo l’Atto I', () => {
+    expect(ATTO1_MISSIONI).toBe(ATTO1.length);
+    expect([...SCELTE_CAMPANA]).toEqual(VOTO.opzioni.map((o) => o.titolo));
+    const meta = leggiCompagnia({ stats: { fratture: 3 }, atto1: { fatte: 2, scelta: null } });
+    expect(meta.atto).toEqual({ fatte: 2, scelta: null });
+    const t1 = contesto(meta, '2026-11-17', []);
+    expect(t1).toContain('missioni della storia compiute 2 su 5');
+    expect(t1).not.toContain('Suonerà quando torneranno');
+    const fine = contesto(leggiCompagnia({ stats: { fratture: 9 }, atto1: { fatte: 5, scelta: 1 } }), '2026-11-17', []);
+    expect(fine).toContain('Suonerà quando torneranno');
+    expect(fine).toContain('«Lasciarla al fondo»');
+    expect(contesto(leggiCompagnia({}), '2026-11-17', [])).toContain('il portale è ancora spento');
   });
 
   it('legge la compagnia anche se il salvataggio è strano', () => {

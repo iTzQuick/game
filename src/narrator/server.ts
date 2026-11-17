@@ -103,6 +103,7 @@ IL MONDO
 - I nemici: l'Ombra (figura scura che colpisce da vicino), lo Sciame (nuvola di frammenti veloci e fragili), il Riflesso (una copia di vetro che spara da lontano), il Bruto (gigante lento che fa tremare il terreno), il Velato (un'ombra invisibile finché la Rivelazione non la mostra).
 - Le classi dei giocatori: Guardiano (scudo, protegge gli altri), Lama (veloce, colpisce alle spalle), Tessitore (magia del vuoto, controlla il campo), Custode (cure e luce).
 - Sul Crocevia la compagnia costruisce una base con i frammenti raccolti: Forgia, Giardino (pozioni), Biblioteca (indizi sul mistero), Sala dei trofei, Osservatorio.
+- La Città Sommersa è il primo mondo che si riapre: il suo portale si accende dopo la prima Frattura richiusa. Strade allagate sul fondo del mare, campanili coperti d'alghe, finestre che respirano bolle. L'aria finisce in fretta e si respira solo nelle colonne di bolle. Ci vivono gli Annegati (pescatori pallidi che, quando colpiscono, rubano il fiato) e le Anguille d'ombra (scattano in linea retta). In fondo c'è La Campana, che suona da sola. La sua storia (Atto I) ha cinque missioni; il diario dice a che punto è la compagnia.
 
 IL MISTERO
 La verità su cosa siano i segni, su chi abbia costruito il Crocevia, su chi abbia spezzato i portali e su cosa sia davvero l'Eco NON è ancora decisa. Non svelarla e non inventare risposte definitive. Puoi suggerire, collegare dettagli già noti e far nascere domande. Ogni testo deve aprire una domanda, non chiuderla.
@@ -159,7 +160,15 @@ export interface Compagnia {
   kills: number;
   edifici: string[];
   diario: { at: number; text: string }[];
+  /** Città Sommersa, Atto I */
+  atto: { fatte: number; scelta: 0 | 1 | null };
 }
+
+/** Missioni della storia e scelte del voto (come in src/citta/core.ts, che qui non si può importare). */
+export const ATTO1_MISSIONI = 5;
+export const SCELTE_CAMPANA = ['Portarla al Crocevia', 'Lasciarla al fondo'] as const;
+const VERITA_CAMPANA =
+  'Dentro la Campana, inciso nel bronzo, c’è un segno uguale a quelli sui polsi della compagnia e quattro nomi graffiati e poi cancellati. Sotto: «Suonerà quando torneranno. Noi non ci saremo più».';
 
 const num = (v: unknown, dflt = 0) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : dflt);
 
@@ -168,7 +177,9 @@ export function leggiCompagnia(raw: unknown): Compagnia {
   const stats = (r.stats && typeof r.stats === 'object' ? r.stats : {}) as Record<string, unknown>;
   const base = (r.base && typeof r.base === 'object' ? r.base : {}) as Record<string, { u?: unknown }>;
   const diario = Array.isArray(r.diario) ? r.diario : [];
+  const a = (r.atto1 && typeof r.atto1 === 'object' ? r.atto1 : {}) as Record<string, unknown>;
   return {
+    atto: { fatte: Math.min(ATTO1_MISSIONI, num(a.fatte)), scelta: a.scelta === 0 || a.scelta === 1 ? a.scelta : null },
     grado: Math.max(1, num(r.grado, 1)),
     best: num(r.best),
     fratture: num(stats.fratture),
@@ -192,6 +203,17 @@ export function contesto(c: Compagnia, giorno: string, indizi: Indizio[]): strin
     `Oggi è il ${giorno}.`,
     `La compagnia: Grado attuale ${c.grado}, record Grado ${c.best}, Fratture richiuse ${c.fratture}, Eco sconfitti ${c.bosses}, nemici sconfitti ${c.kills}.`,
     `Edifici costruiti: ${c.edifici.length ? c.edifici.join(', ') : 'nessuno'}.`,
+    c.fratture < 1
+      ? 'Città Sommersa: il portale è ancora spento.'
+      : `Città Sommersa: aperta; missioni della storia compiute ${c.atto.fatte} su ${ATTO1_MISSIONI}.`,
+    ...(c.atto.fatte >= ATTO1_MISSIONI
+      ? [
+          `La compagnia ha trovato il frammento di verità della Città: ${VERITA_CAMPANA}`,
+          c.atto.scelta === null
+            ? 'Deve ancora decidere cosa fare della Campana.'
+            : `Ha deciso cosa fare della Campana: «${SCELTE_CAMPANA[c.atto.scelta]}».`,
+        ]
+      : []),
     `Indizi già trovati in Biblioteca: ${indizi.length ? indizi.map((i) => `«${i.titolo}» (${i.testo})`).join(' ') : 'nessuno'}.`,
     'Diario della compagnia, dal più vecchio al più recente:',
     c.diario.length ? c.diario.map((d) => `- ${data(d.at)}: ${d.text}`).join('\n') : '- (vuoto: la compagnia è appena nata)',

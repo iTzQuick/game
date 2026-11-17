@@ -55,6 +55,8 @@ export type CombatMsg =
   | { t: 'loot'; items: Item[]; frags: number; why?: string }
   /** un giocatore ha fatto qualcosa che la missione vieta (al host) */
   | { t: 'mfail'; k: 'pozione' }
+  /** voto della compagnia (al host): indice dell'opzione */
+  | { t: 'voto'; v: 0 | 1 }
   /** frammenti versati in un edificio della base (al host) e conferma */
   | { t: 'contrib'; b: BuildingId; n: number }
   | { t: 'contribok'; b: BuildingId; used: number };

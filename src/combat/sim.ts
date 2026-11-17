@@ -4,7 +4,7 @@
 // eventi con un preavviso: ognuno controlla da sé se il colpo lo prende
 // (così una schivata fatta in tempo vale sempre, anche con un po' di ritardo).
 
-import { ENEMIES, EF, VEILED_DMG_TAKEN, AB, type EnemyType, type ModId, type Scaling } from './defs';
+import { ENEMIES, EF, VEILED_DMG_TAKEN, AB, WAVE_POOLS, isBoss, type EnemyType, type ModId, type Scaling } from './defs';
 import { spawnPoints, type Dungeon } from './dungeon';
 
 export interface PlayerView {
@@ -93,11 +93,19 @@ export class EnemySim {
   zones: SimZone[] = [];
   private nextId = 1;
 
+  /** Boss in fondo e nemici delle ondate (la Città Sommersa ha i suoi). */
+  boss: EnemyType = 'eco';
+  pool: EnemyType[] = WAVE_POOLS.frattura;
+
   constructor(
     public dungeon: Dungeon,
     public scale: Scaling,
     public mods: ModId[],
-  ) {}
+    opts: { boss?: EnemyType; pool?: EnemyType[] } = {},
+  ) {
+    if (opts.boss) this.boss = opts.boss;
+    if (opts.pool) this.pool = opts.pool;
+  }
 
   spawn(type: EnemyType, room: number, x: number, z: number, now: number): Enemy {
     const def = ENEMIES[type];
@@ -128,7 +136,7 @@ export class EnemySim {
       veiled,
       pulled: false,
     };
-    if (type === 'eco') e.boss = { nextNova: now + 4000, summoned: 0, enraged: false };
+    if (isBoss(type)) e.boss = { nextNova: now + 4000, summoned: 0, enraged: false };
     this.enemies.set(e.id, e);
     return e;
   }
@@ -149,10 +157,10 @@ export class EnemySim {
   spawnWave(room: number, wave: number, players: number, grado: number, rand: () => number, now: number, focus?: Focus): Enemy[] {
     const r = this.dungeon.rooms[room];
     if (r.kind === 'boss') {
-      const boss = this.spawn('eco', room, r.cx, r.rect.z0 + 7, now);
+      const boss = this.spawn(this.boss, room, r.cx, r.rect.z0 + 7, now);
       return [boss];
     }
-    const types = composeWave(6 + 2 * (players - 1) + (grado - 1) + room + wave, rand, this.mods, focus);
+    const types = composeWave(6 + 2 * (players - 1) + (grado - 1) + room + wave, rand, this.mods, focus, this.pool);
     const pts = spawnPoints(this.dungeon, room, types.length, rand);
     return types.map((t, i) => this.spawn(t, room, pts[i][0], pts[i][1], now));
   }
@@ -205,9 +213,9 @@ export class EnemySim {
       e.vx += h.kb[0];
       e.vz += h.kb[1];
     }
-    if (h.st && e.type !== 'eco') {
+    if (h.st && !isBoss(e.type)) {
       e.stunUntil = Math.max(e.stunUntil, now + h.st);
-    } else if (h.st && e.type === 'eco') {
+    } else if (h.st) {
       // il boss resiste: stordimento ridotto
       e.stunUntil = Math.max(e.stunUntil, now + h.st * 0.35);
     }
@@ -286,6 +294,12 @@ export class EnemySim {
                 : [this.aimAt(e, target)];
             ev.push({ t: 'epj', id: e.id, x: e.x, z: e.z, dirs, spd: def.projSpeed ?? 10, dmg: Math.round(def.dmg * this.scale.dmg * (atk.k === 'nova' ? 0.55 : 1)) });
           }
+          // l'Anguilla scatta in avanti lungo la linea del preavviso
+          if (def.lunge && atk?.k === 'cone') {
+            e.x += Math.sin(atk.r) * def.lunge;
+            e.z += Math.cos(atk.r) * def.lunge;
+            e.vx = e.vz = 0;
+          }
           e.ai = 'recover';
           e.atk = null;
           e.t = now + def.recover * 1000 * this.scale.recover;
@@ -359,7 +373,7 @@ export class EnemySim {
         const dz = z.z - e.z;
         const d = Math.hypot(dx, dz);
         if (d < z.r && d > 0.3) {
-          const k = (z.pull * (e.type === 'eco' ? 0.25 : 1)) / d;
+          const k = (z.pull * (isBoss(e.type) ? 0.25 : 1)) / d;
           e.vx += dx * k * dt;
           e.vz += dz * k * dt;
           e.pulled = true;
@@ -396,11 +410,19 @@ export class EnemySim {
         if (e.boss.summoned < thresholds.length && frac <= thresholds[e.boss.summoned]) {
           e.boss.summoned++;
           const room = this.dungeon.rooms[e.room];
-          for (const [t, ox] of [
-            ['ombra', -3],
-            ['ombra', 3],
-            ['sciame', 0],
-          ] as const) {
+          const helpers: [EnemyType, number][] =
+            e.type === 'campana'
+              ? [
+                  ['annegato', -3],
+                  ['annegato', 3],
+                  ['anguilla', 0],
+                ]
+              : [
+                  ['ombra', -3],
+                  ['ombra', 3],
+                  ['sciame', 0],
+                ];
+          for (const [t, ox] of helpers) {
             this.spawn(t, e.room, clamp(e.x + ox, room.rect.x0 + 2, room.rect.x1 - 2), clamp(e.z - 2, room.rect.z0 + 2, room.rect.z1 - 2), now);
           }
         }
@@ -445,8 +467,7 @@ export interface Focus {
 }
 
 /** Sceglie i tipi di nemici di un'ondata spendendo un "budget". */
-export function composeWave(budget: number, rand: () => number, mods: ModId[], focus?: Focus): EnemyType[] {
-  const pool: EnemyType[] = ['sciame', 'ombra', 'ombra', 'riflesso', 'velato', 'bruto'];
+export function composeWave(budget: number, rand: () => number, mods: ModId[], focus?: Focus, pool: EnemyType[] = WAVE_POOLS.frattura): EnemyType[] {
   const out: EnemyType[] = [];
   let left = budget;
   let guard = 0;

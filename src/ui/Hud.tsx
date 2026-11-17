@@ -9,6 +9,7 @@ import { StatsPanel, linkLabel } from './Stats';
 import { CombatHud, TopStatus } from './CombatHud';
 import { Icon } from './Icon';
 import { ProgressPanels } from './ProgressPanels';
+import { VotePanel, useCittaStory } from './CittaPanel';
 import { runRequest } from '../world/layout';
 
 export function Hud({ touch }: { touch: boolean }) {
@@ -19,6 +20,7 @@ export function Hud({ touch }: { touch: boolean }) {
   const dialog = useGame((s) => s.dialog);
   const pointerLocked = useGame((s) => s.pointerLocked);
   const anyMenu = classPicker || settingsOpen || helpOpen || dialog !== null;
+  useCittaStory();
 
   return (
     <div className="hud">
@@ -43,6 +45,7 @@ export function Hud({ touch }: { touch: boolean }) {
       {settingsOpen && <SettingsPanel />}
       {helpOpen && <HelpPanel touch={touch} />}
       <ProgressPanels />
+      <VotePanel />
       {touch && <OrientationHint />}
     </div>
   );

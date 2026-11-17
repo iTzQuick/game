@@ -1,6 +1,7 @@
 // Icone dipinte (Higgsfield) dell'interfaccia: public/ui/icone/<nome>.webp.
 // Nomi: <classe>-<Q|E|R|F>, classe-<classe>, slot-<arma|armatura|amuleto>,
-// frammenti, pozione, attacco, schivata, forgia, giardino, biblioteca, trofei, osservatorio.
+// frammenti, pozione, attacco, schivata, forgia, giardino, biblioteca, trofei, osservatorio,
+// ossigeno, verita, voto, campana (Città Sommersa).
 
 export const iconUrl = (name: string) => `${import.meta.env.BASE_URL}ui/icone/${name}.webp`;
 

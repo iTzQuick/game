@@ -53,6 +53,12 @@ registerModels({
     bruto: { file: 'bruto.glb', height: 2.5, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 1.5, attackSpeed: 0.68 },
     velato: { file: 'velato.glb', height: 2.0, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.6, attackSpeed: 0.84 },
     eco: { file: 'eco.glb', height: 3.4, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.2, attackSpeed: 1.0 },
+    // Città Sommersa
+    annegato: { file: 'annegato.glb', height: 1.85, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.0, attackSpeed: 0.81 },
+    // senza scheletro: nuota serpeggiando e scatta (EnemyMesh)
+    anguilla: { file: 'anguilla.glb', height: 0.9, clips: {}, rigid: true, lift: 0.55 },
+    // il boss: una campana che galleggia e dondola
+    campana: { file: 'campana.glb', height: 4.2, clips: {}, rigid: true, lift: 0.4 },
   },
   props: {
     portale: { file: 'portale.glb', height: 5.6 },
@@ -71,6 +77,8 @@ registerModels({
     biblioteca: { file: 'biblioteca.glb', height: 3.0, maxWidth: 3.8 },
     trofei: { file: 'trofei.glb', height: 3.0, maxWidth: 3.6 },
     osservatorio: { file: 'osservatorio.glb', height: 3.6, maxWidth: 3.4 },
+    // Città Sommersa
+    campanile: { file: 'campanile.glb', height: 7, maxWidth: 3.6 },
     // armi degli eroi (vedi gear.tsx)
     spada: { file: 'spada.glb', height: 0.9 },
     scudo: { file: 'scudo.glb', height: 0.62 },

@@ -6,6 +6,7 @@ import { getRoom } from '../net/room';
 import { emitCombat } from '../combat/bus';
 import type { Dungeon } from '../combat/dungeon';
 import { BUILDINGS, BUILDING_RADIUS } from '../progress/defs';
+import { CITTA, cittaAperta } from '../citta/core';
 
 export const ISLAND_RADIUS = 22;
 export const PORTAL_RADIUS = 16.5;
@@ -130,8 +131,18 @@ export const INTERACTABLES: Interactable[] = [
     x: Math.sin(p.angle) * (PORTAL_RADIUS - 1.2),
     z: Math.cos(p.angle) * (PORTAL_RADIUS - 1.2),
     radius: 3.4,
-    label: () => `Portale spento: ${p.world.name}`,
-    act: () => openDialog(p.world.name, [p.world.whisper, 'Il portale è spento. Per ora.']),
+    label: () => (p.world.id === CITTA && cittaAperta(getGame().room.gstats) ? `Entra nella ${p.world.name}` : `Portale spento: ${p.world.name}`),
+    act: () => {
+      if (p.world.id === CITTA) {
+        if (cittaAperta(getGame().room.gstats)) {
+          setGame({ panel: 'citta' });
+          return;
+        }
+        openDialog(p.world.name, [p.world.whisper, 'Il portale è spento. Si accenderà quando la compagnia avrà richiuso la sua prima Frattura.']);
+        return;
+      }
+      openDialog(p.world.name, [p.world.whisper, 'Il portale è spento. Per ora.']);
+    },
   })),
 ];
 
