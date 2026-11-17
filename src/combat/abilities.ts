@@ -10,7 +10,15 @@ import { getGame } from '../game/store';
 import { getRoom } from '../net/room';
 import { spawnFlash, spawnPuff, spawnRing, spawnSlash, addBeam } from '../fx/effects';
 import { emitCombat } from './bus';
-import { AB, CLASS_STATS, EF, ENEMIES, ULTRA_GAIN, ULTRA_MAX } from './defs';
+import { AB, CLASS_STATS, EF, ENEMIES, ULTRA_GAIN, ULTRA_LOCK, ULTRA_MAX } from './defs';
+
+/** Quanto resta attiva ogni Ultra (secondi): durante non si ricarica. */
+const ULTRA_ACTIVE: Record<ClassId, number> = {
+  guardiano: AB.bastione.dur,
+  lama: 1.5,
+  tessitore: AB.collasso.dur,
+  custode: 1,
+};
 import { COMBO_NAMES, VF, type AbilitySlot, type CombatMsg } from './protocol';
 import { combat, showCombo, type EnemyView } from './runtime';
 import type { Hit } from './sim';
@@ -368,8 +376,10 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
   if (!st.ready || !combat.alive || !ctx.cls) return false;
   const m = combat.me;
   currentClass = ctx.cls;
-  if (slot === 'F') m.ultra = 0;
-  else m.cd[slot] = now + cooldownMs(ctx.cls, slot);
+  if (slot === 'F') {
+    m.ultra = 0;
+    m.ultraLockUntil = now + (ULTRA_ACTIVE[ctx.cls] + ULTRA_LOCK) * 1000;
+  } else m.cd[slot] = now + cooldownMs(ctx.cls, slot);
   // ogni abilità ha il suo movimento del corpo
   ctx.attackAnim(1, abilityMove(ctx.cls, slot), slot);
   const color = colorOf(ctx.cls);

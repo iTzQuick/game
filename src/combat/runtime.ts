@@ -132,6 +132,8 @@ export interface MyVitals {
   lastHurt: number;
   /** pozioni del Giardino per questa Frattura */
   potions: number;
+  /** fino a quando la Ultra non si ricarica (mentre è attiva e poco dopo) */
+  ultraLockUntil: number;
   /** ossigeno nella Città Sommersa (0-100) */
   oxygen: number;
 }
@@ -156,6 +158,7 @@ const freshVitals = (maxHp: number): MyVitals => ({
   varcoCd: 0,
   lastHurt: 0,
   potions: 0,
+  ultraLockUntil: 0,
   oxygen: OSSIGENO.max,
 });
 
@@ -239,6 +242,8 @@ class CombatRuntime {
   }
 
   addUltra(n: number) {
+    // mentre una Ultra è attiva (e per qualche secondo dopo) non si ricarica: niente Ultra a catena
+    if (performance.now() < this.me.ultraLockUntil) return;
     this.me.ultra = Math.min(ULTRA_MAX, this.me.ultra + n * (1 + this.mods.ultraPct));
   }
 
@@ -253,11 +258,13 @@ class CombatRuntime {
     const m = this.me;
     if (!this.alive || raw <= 0) return;
     if (now < m.invulnUntil) return;
-    if (now < m.bastionUntil) {
-      m.bastionAbsorbed += raw;
-      return;
-    }
     let dmg = raw;
+    if (now < m.bastionUntil) {
+      // il Bastione ferma gran parte dei colpi e li accumula per l'esplosione, ma non tutti
+      const blocked = raw * AB.bastione.block;
+      m.bastionAbsorbed += blocked;
+      dmg -= blocked;
+    }
     if (this.insideBarrier(this.selfPos.x, this.selfPos.z)) dmg *= 1 - AB.barriera.reduction;
     if (now < m.guardUntil) dmg *= 1 - AB.provocazione.reduction;
     dmg *= 1 - this.mods.dmgReduction;

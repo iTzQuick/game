@@ -28,7 +28,9 @@ export const CLASS_STATS: Record<ClassId | 'none', ClassStats> = {
 
 export const ULTRA_MAX = 100;
 /** Carica della Ultra per ogni punto di danno inflitto, subito o curato. */
-export const ULTRA_GAIN = { dealt: 0.55, taken: 0.5, healed: 0.5 };
+export const ULTRA_GAIN = { dealt: 0.4, taken: 0.4, healed: 0.35 };
+/** Dopo una Ultra la carica resta ferma per questi secondi (oltre alla durata della Ultra). */
+export const ULTRA_LOCK = 6;
 
 export const DOWN_SECONDS = 20;
 export const REVIVE_SECONDS = 2.5;
@@ -40,7 +42,8 @@ export const AB = {
   scudo: { range: 3.6, arc: 2.1, dmg: 20, stun: 1600 },
   provocazione: { radius: 11, taunt: 5000, reduction: 0.3, dur: 5 },
   barriera: { radius: 4.2, dur: 6, reduction: 0.6 },
-  bastione: { dur: 8, tauntRadius: 12, blastRadius: 7, blastBase: 30, blastMul: 1.5 },
+  /** il Bastione blocca `block` dei danni (non tutti: si può ancora cadere) e li restituisce nell'esplosione */
+  bastione: { dur: 8, tauntRadius: 12, blastRadius: 7, blastBase: 30, blastMul: 1.5, block: 0.7 },
   scatto: { dist: 7, behindRange: 9, bonus: 1.5 },
   vortice: { radius: 3.8, ticks: 3, dmg: 14, every: 0.2 },
   velo: { dur: 5, mul: 2 },
