@@ -62,7 +62,7 @@ export interface PlayerCtx {
   autoAim: boolean;
   /** Animazioni del personaggio. */
   /** animazione d'attacco: numero del colpo e movimento del corpo (player/moves.ts) */
-  attackAnim: (n: number, style?: MoveStyle) => void;
+  attackAnim: (n: number, style?: MoveStyle, slot?: AbilitySlot) => void;
 }
 
 const colorOf = (cls: ClassId | null) => (cls ? CLASSES[cls].color : '#8a8496');
@@ -371,7 +371,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
   if (slot === 'F') m.ultra = 0;
   else m.cd[slot] = now + cooldownMs(ctx.cls, slot);
   // ogni abilità ha il suo movimento del corpo
-  ctx.attackAnim(1, abilityMove(ctx.cls, slot));
+  ctx.attackAnim(1, abilityMove(ctx.cls, slot), slot);
   const color = colorOf(ctx.cls);
   const key = `${ctx.cls}:${slot}` as const;
 

@@ -40,6 +40,7 @@ export function RemotePlayers() {
         pose.attackT = 0;
         pose.attackN = 1;
         pose.attackStyle = abilityMove(msg.cls, msg.a);
+        pose.attackSlot = msg.a;
       }),
     [],
   );
@@ -57,6 +58,7 @@ export function RemotePlayers() {
             pose.attackT = 0;
             pose.attackN = ev.n;
             pose.attackStyle = cls && CLASSES[cls].ranged ? 'shoot' : 'swing';
+            pose.attackSlot = null;
             if (cls && CLASSES[cls].ranged) remoteBolt(cls, ev.p, ev.r);
             else spawnSlash(ev.p, ev.r, color, ev.n);
           } else {

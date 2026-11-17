@@ -18,7 +18,10 @@ const weapon = (name: string, y: number, fallback: ReactNode) => <PropOr name={n
 registerModels({
   heroes: {
     guardiano: {
-      file: 'guardiano.glb', height: 1.85, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5, attackSpeed: 1.5,
+      file: 'guardiano.glb', height: 1.85, runSpeed: 5.5, attackSpeed: 1.5,
+      // 2° e 3° colpo, Colpo di scudo (Q), schianto per Barriera (R) e Bastione (F), capriola
+      clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', attack2: 'attack2', attack3: 'attack3', abQ: 'abQ', abR: 'abR', abF: 'abR', dodge: 'dodge' },
+      speeds: { attack2: 2.0, attack3: 2.1, abQ: 1.8, abR: 2.1, abF: 1.9 },
       gear: [
         { bone: 'RightHand', pos: [-0.032, -0.067, 0.03], rot: FORWARD, node: weapon('spada', -0.12, <Sword />) },
         // legato sul lato esterno dell'avambraccio, rivolto in fuori e un po' in avanti: il braccio non lo attraversa
@@ -26,18 +29,27 @@ registerModels({
       ],
     },
     lama: {
-      file: 'lama.glb', height: 1.75, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 6, attackSpeed: 1.5,
+      file: 'lama.glb', height: 1.75, runSpeed: 6, attackSpeed: 1.5,
+      // combo a due lame, Scatto (Q), Lame vorticanti (E, anche nei Mille tagli), capriola
+      clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', attack2: 'attack2', attack3: 'attack3', abQ: 'abQ', abE: 'abE', abF: 'abE', dodge: 'dodge' },
+      speeds: { attack2: 2.5, attack3: 2.9, abQ: 2.4, abE: 2.9, abF: 2.9 },
       gear: [
         { bone: 'RightHand', pos: [-0.022, -0.065, 0.025], rot: FORWARD, node: weapon('pugnale', -0.06, <Dagger />) },
         { bone: 'LeftHand', pos: [0.023, -0.065, 0.025], rot: FORWARD, node: weapon('pugnale', -0.06, <Dagger />) },
       ],
     },
     tessitore: {
-      file: 'tessitore.glb', height: 1.95, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5, attackSpeed: 1.5,
+      file: 'tessitore.glb', height: 1.95, runSpeed: 5.5, attackSpeed: 1.5,
+      // Varco (Q), Trappola (E), Collasso (F), capriola; il Dardo (R) usa l'attacco
+      clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', abQ: 'abQ', abE: 'abE', abF: 'abF', dodge: 'dodge' },
+      speeds: { abQ: 2.6, abE: 2.6, abF: 2.3 },
       gear: [{ bone: 'RightHand', pos: [-0.06, -0.14, 0.18], node: <Orb /> }],
     },
     custode: {
-      file: 'custode.glb', height: 1.8, clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down' }, runSpeed: 5.5, attackSpeed: 1.5,
+      file: 'custode.glb', height: 1.8, runSpeed: 5.5, attackSpeed: 1.5,
+      // Raggio (Q), Rivelazione e Benedizione (E, R), Alba (F), capriola
+      clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', abQ: 'abQ', abE: 'abR', abR: 'abR', abF: 'abF', dodge: 'dodge' },
+      speeds: { abQ: 2.6, abE: 2.6, abR: 2.4, abF: 2.4 },
       gear: [
         { bone: 'RightHand', pos: [-0.038, -0.055, 0.04], node: weapon('bastone', -0.98, <Staff />) },
         { bone: 'Head', pos: [0, 0, 0], node: <Halo height={0.36} /> },
