@@ -8,6 +8,9 @@ import { displayName, getGame } from '../game/store';
 import { getRoom } from '../net/room';
 import { createCloudGroup, joinCloudGroup, loadCloudGroup, writeCloudGroup } from './cloud';
 import { addDiary, contribute, emptyGroup, normalizeGroup, type GroupData } from './model';
+import { BUILDINGS } from './defs';
+import { giornoRoma, narrazioneRiserva, testoObiettivo, validaNarrazione, type Narrazione } from '../narrator/core';
+import { narrazioneDelGiorno, nuovoIndizio, spiegaMotivo } from '../narrator/client';
 import { getProgress, mutate } from './store';
 
 const localKey = (code: string) => `fratture.group.${code}`;
@@ -66,6 +69,9 @@ async function adoptGroup(code: string): Promise<GroupData> {
   return readLocalGroup(code) ?? emptyGroup();
 }
 
+/** Righe del diario mostrate a tutti nella Sala dei trofei. */
+const DIARIO_VISIBILE = 12;
+
 class GroupKeeper {
   private data: GroupData | null = null;
   private code: string | null = null;
@@ -74,6 +80,13 @@ class GroupKeeper {
   private timer: ReturnType<typeof setInterval> | null = null;
   private writeTimer: ReturnType<typeof setTimeout> | null = null;
   private unsub: (() => void) | null = null;
+  /** narratore: una richiesta alla volta, con pause tra un tentativo e l'altro */
+  private asking = false;
+  private nextDayAsk = 0;
+  private dayTries = 0;
+  private nextClueAsk = 0;
+  private clueTries = new Map<number, number>();
+  private gaveUp = false;
 
   start() {
     this.timer = setInterval(() => void this.tick(), 500);
@@ -91,6 +104,20 @@ class GroupKeeper {
   /** Per i test automatici. */
   get debug() {
     return { code: this.code, data: this.data };
+  }
+
+  /** Una riga nel diario della compagnia (la legge il narratore). Solo l'host. */
+  note(text: string) {
+    const room = getRoom();
+    if (!room?.isHost || !this.data) return;
+    addDiary(this.data, text);
+    const diario = this.data.diario.slice(-DIARIO_VISIBILE);
+    room.updateRoom((s) => ({ ...s, diario }));
+    this.saveSoon();
+  }
+
+  private cloudGroup() {
+    return isCloud() && !!this.code && !this.code.startsWith('L');
   }
 
   private async tick() {
@@ -123,6 +150,8 @@ class GroupKeeper {
           this.data = data;
           room.updateRoom((s) => ({ ...s, group: code, grado: data.grado, best: data.best, base: data.base, gstats: data.stats }));
         }
+        const d = this.data;
+        room.updateRoom((s) => ({ ...s, indizi: d.indizi, diario: d.diario.slice(-DIARIO_VISIBILE) }));
       } catch (e) {
         console.warn('Compagnia non caricata', e);
         this.code = null;
@@ -135,18 +164,99 @@ class GroupKeeper {
 
     const d = this.data;
     if ((st.grado ?? 1) !== d.grado || (st.best ?? 0) !== d.best) {
+      const record = (st.best ?? 0) > d.best;
       d.grado = st.grado ?? d.grado;
       d.best = st.best ?? d.best;
-      this.saveSoon();
+      if (record) addDiary(d, `Nuovo record della compagnia: Grado ${d.best}.`);
+      // subito sul cloud: il narratore legge il record da lì per scrivere l'indizio
+      void this.flush();
     }
     const run = st.run;
     if (run?.phase === 'complete' && this.completedRun !== run.id) {
       this.completedRun = run.id;
       d.stats = { ...d.stats, fratture: d.stats.fratture + 1, bosses: d.stats.bosses + 1 };
       const names = room.admittedIds.map((id) => displayName(id)).join(', ');
-      addDiary(d, `Frattura di Grado ${run.grado} richiusa da ${names}.`);
-      room.updateRoom((s) => ({ ...s, gstats: d.stats }));
+      addDiary(d, `Frattura di Grado ${run.grado} richiusa da ${names}${run.wipes ? ` (tutti a terra ${run.wipes === 1 ? 'una volta' : `${run.wipes} volte`})` : ', senza mai cadere tutti insieme'}.`);
+      const m = run.missione;
+      if (m?.esito === 'compiuta') {
+        addDiary(d, `Missione «${m.titolo}» compiuta.`);
+        const giorno = m.id.slice(0, 10);
+        const fatte = d.missioni.giorno === giorno ? [...new Set([...d.missioni.fatte, m.id])] : [m.id];
+        d.missioni = { giorno, fatte };
+        if (st.narrazione?.giorno === giorno) room.updateRoom((s) => ({ ...s, fatte }));
+      } else if (m?.esito === 'fallita') addDiary(d, `Missione «${m.titolo}» fallita: ${testoObiettivo(m.obiettivo).toLowerCase()} non è riuscito.`);
+      const diario = d.diario.slice(-DIARIO_VISIBILE);
+      room.updateRoom((s) => ({ ...s, gstats: d.stats, diario }));
       this.saveSoon();
+    }
+    this.tickNarrator(room, d);
+  }
+
+  /** Missioni del giorno e indizi: prima quelli di riserva, poi (se si può) quelli di Claude. */
+  private tickNarrator(room: NonNullable<ReturnType<typeof getRoom>>, d: GroupData) {
+    const st = room.roomState;
+    const code = this.code!;
+    const today = giornoRoma();
+    if (st.narrazione?.giorno !== today) {
+      const fatte = d.missioni.giorno === today ? d.missioni.fatte : [];
+      const cached = readCachedDay(code, today);
+      const stato = cached ? '' : this.cloudGroup() ? 'Il narratore sta scrivendo…' : spiegaMotivo(isCloud() ? 'locale' : 'ospite');
+      room.updateRoom((s) => ({ ...s, narrazione: cached ?? narrazioneRiserva(today, code), fatte, statoNarratore: stato }));
+      this.dayTries = 0;
+      this.nextDayAsk = 0;
+      return;
+    }
+    if (!this.cloudGroup() || this.asking || this.gaveUp) return;
+    const now = Date.now();
+
+    if (st.narrazione.fonte !== 'claude' && now >= this.nextDayAsk && this.dayTries < 4) {
+      this.asking = true;
+      this.dayTries++;
+      void narrazioneDelGiorno(code)
+        .then((r) => {
+          const room2 = getRoom();
+          if (!room2?.isHost || this.code !== code) return;
+          if (r.ok) {
+            writeCachedDay(code, r.dati);
+            if (r.dati.giorno === today) room2.updateRoom((s) => ({ ...s, narrazione: r.dati, statoNarratore: '' }));
+            return;
+          }
+          if (r.motivo === 'assente') this.gaveUp = true;
+          // mentre un altro dispositivo la sta scrivendo si riprova presto
+          this.nextDayAsk = Date.now() + (r.motivo === 'attendi' ? 20_000 : 5 * 60_000);
+          if (r.motivo === 'esaurito' || r.motivo === 'limite') this.dayTries = 99;
+          room2.updateRoom((s) => ({ ...s, statoNarratore: spiegaMotivo(r.motivo) }));
+        })
+        .finally(() => (this.asking = false));
+      return;
+    }
+
+    // un indizio per ogni nuovo record (il narratore lo scrive una volta sola)
+    const best = d.best;
+    const tries = this.clueTries.get(best) ?? 0;
+    if (best >= 1 && !d.indizi.some((i) => i.grado === best) && now >= this.nextClueAsk && tries < 3) {
+      this.asking = true;
+      this.clueTries.set(best, tries + 1);
+      void nuovoIndizio(code, best)
+        .then((r) => {
+          const room2 = getRoom();
+          if (!room2?.isHost || this.code !== code || !this.data) return;
+          if (r.ok) {
+            const data = this.data;
+            if (data.indizi.some((i) => i.grado === r.dati.grado)) return;
+            data.indizi = [...data.indizi, r.dati].sort((a, b) => a.grado - b.grado).slice(-40);
+            addDiary(data, `In Biblioteca è comparso un nuovo indizio: «${r.dati.titolo}».`);
+            const indizi = data.indizi;
+            const diario = data.diario.slice(-DIARIO_VISIBILE);
+            room2.updateRoom((s) => ({ ...s, indizi, diario }));
+            this.saveSoon();
+            return;
+          }
+          if (r.motivo === 'assente') this.gaveUp = true;
+          this.nextClueAsk = Date.now() + (r.motivo === 'presto' || r.motivo === 'attendi' ? 15_000 : 5 * 60_000);
+          if (r.motivo === 'esaurito' || r.motivo === 'limite') this.clueTries.set(best, 99);
+        })
+        .finally(() => (this.asking = false));
     }
   }
 
@@ -157,10 +267,15 @@ class GroupKeeper {
       this.data.stats = { ...this.data.stats, kills: this.data.stats.kills + 1 };
       this.saveSoon();
     } else if (msg.t === 'contrib') {
+      const wasBuilt = !!this.data.base[msg.b]?.u;
       const used = contribute(this.data, msg.b, msg.n);
       if (used > 0) {
         const base = this.data.base;
         room.updateRoom((s) => ({ ...s, base }));
+        if (!wasBuilt && base[msg.b]?.u) {
+          const def = BUILDINGS.find((b) => b.id === msg.b);
+          this.note(`Costruita la ${def?.name ?? msg.b} del Crocevia, con l’ultimo contributo di ${displayName(from)}.`);
+        }
         this.saveSoon();
       }
       emitCombat({ t: 'contribok', b: msg.b, used }, { to: from });
@@ -185,6 +300,26 @@ class GroupKeeper {
         console.warn('Compagnia non salvata sul cloud', e);
       }
     }
+  }
+}
+
+// la narrazione del giorno resta sul dispositivo: chi diventa host la ritrova senza chiederla di nuovo
+const dayKey = (code: string) => `fratture.narratore.${code}`;
+
+function readCachedDay(code: string, giorno: string): Narrazione | null {
+  try {
+    const n = validaNarrazione(JSON.parse(localStorage.getItem(dayKey(code)) ?? 'null'));
+    return n && n.giorno === giorno ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedDay(code: string, n: Narrazione) {
+  try {
+    localStorage.setItem(dayKey(code), JSON.stringify(n));
+  } catch {
+    /* ignorato */
   }
 }
 

@@ -380,6 +380,15 @@ export const FRAGMENTS = {
   boss: (grado: number) => 30 + 5 * grado,
 };
 
+/**
+ * Ricompensa di una missione del giorno compiuta, per difficoltà (0-4, vedi
+ * narrator/core.ts): frammenti e, dalla difficoltà 1, un oggetto almeno raro.
+ */
+export function missionReward(difficulty: number, grado: number): { frags: number; minRarity: number | null } {
+  const d = Math.max(0, Math.min(4, Math.round(difficulty)));
+  return { frags: Math.round(FRAGMENTS.room(grado) * (1 + d)), minRarity: d >= 3 ? 2 : d >= 1 ? 1 : null };
+}
+
 export function formatAffix(a: Affix): string {
   const l = STAT_LABELS[a.k];
   if (!l.pct) return `+${a.v} ${l.name}`;

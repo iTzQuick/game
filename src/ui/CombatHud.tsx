@@ -13,6 +13,7 @@ import { press } from '../game/input';
 import { Icon } from './Icon';
 import { useProgress } from '../progress/store';
 import { classProgress } from '../progress/model';
+import { nomeNemico, secondiRimasti, testoObiettivo } from '../narrator/core';
 
 /** Ridisegna il componente ~10 volte al secondo (i valori vivono fuori da React). */
 export function usePoll(ms = 100) {
@@ -82,6 +83,8 @@ export function CombatHud({ touch }: { touch: boolean }) {
 /** Il conto alla rovescia resta al centro: è un momento solo, e dura 5 secondi. */
 function RunCountdown() {
   const run = useGame((s) => s.room.run)!;
+  const eco = useGame((s) => s.room.narrazione?.eco);
+  const ecoLine = eco?.length ? eco[run.id % eco.length] : null;
   const seenAt = useRef(0);
   const runId = useRef(-1);
   if (runId.current !== run.id) {
@@ -97,6 +100,28 @@ function RunCountdown() {
         Grado {run.grado}
         {run.mods.length ? ` · ${run.mods.map((m) => MODS[m].name).join(' · ')}` : ''}
       </small>
+      {run.missione && <small className="countdown-mission">📜 {run.missione.titolo}: {testoObiettivo(run.missione.obiettivo)}</small>}
+      {ecoLine && <em className="eco-line">{ecoLine}</em>}
+    </div>
+  );
+}
+
+/** Lo stato della missione del giorno, in una riga. */
+function MissionLine() {
+  const m = useGame((s) => s.room.run?.missione);
+  if (!m) return null;
+  const failed = m.esito === 'fallita' || (!m.esito && m.fallita);
+  let what: string;
+  if (m.esito === 'compiuta') what = 'compiuta ✓';
+  else if (failed) what = 'fallita ✗';
+  else if (m.obiettivo.tipo === 'sconfiggi') what = `${Math.min(m.conta, m.obiettivo.quanti)}/${m.obiettivo.quanti} ${nomeNemico(m.obiettivo.nemico, true)}`;
+  else if (m.obiettivo.tipo === 'veloce') {
+    const left = secondiRimasti(m, Date.now()) ?? m.obiettivo.minuti * 60;
+    what = left > 0 ? `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'tempo scaduto ✗';
+  } else what = m.obiettivo.tipo === 'nessuno_cade' ? 'nessuno deve cadere' : m.obiettivo.tipo === 'senza_pozioni' ? 'niente pozioni' : 'richiudete la Frattura';
+  return (
+    <div className={`mission-line${failed ? ' failed' : m.esito === 'compiuta' ? ' done' : ''}`} title={testoObiettivo(m.obiettivo)}>
+      📜 {m.titolo} · {what}
     </div>
   );
 }
@@ -113,6 +138,7 @@ export function TopStatus() {
   return (
     <>
       {inRun && run && <RunLine />}
+      {inRun && <MissionLine />}
       {inRun && <BossBar />}
       {combo && (
         <div className="combo-banner" key={combo.t0}>

@@ -21,6 +21,7 @@ import {
   type Slot,
   type StatKey,
 } from './defs';
+import { validaIndizio, type Indizio } from '../narrator/core';
 
 // --- Salvataggio del giocatore -----------------------------------------------------
 
@@ -236,8 +237,12 @@ export interface GroupData {
   best: number;
   base: Partial<Record<BuildingId, BuildingState>>;
   stats: { fratture: number; bosses: number; kills: number };
-  /** diario del gruppo: lo userà il narratore (tappa 6) */
+  /** diario del gruppo: lo legge il narratore (tappa 6) */
   diario: { at: number; text: string }[];
+  /** missioni del giorno già compiute */
+  missioni: { giorno: string; fatte: string[] };
+  /** indizi della Biblioteca scritti dal narratore, uno per record */
+  indizi: Indizio[];
 }
 
 export const emptyGroup = (): GroupData => ({
@@ -247,6 +252,8 @@ export const emptyGroup = (): GroupData => ({
   base: {},
   stats: { fratture: 0, bosses: 0, kills: 0 },
   diario: [],
+  missioni: { giorno: '', fatte: [] },
+  indizi: [],
 });
 
 export function normalizeGroup(raw: unknown): GroupData {
@@ -262,6 +269,16 @@ export function normalizeGroup(raw: unknown): GroupData {
     base: { ...(r.base ?? {}) },
     stats: { ...base.stats, ...(r.stats ?? {}) },
     diario: Array.isArray(r.diario) ? r.diario.slice(-100) : [],
+    missioni:
+      r.missioni && typeof r.missioni.giorno === 'string' && Array.isArray(r.missioni.fatte)
+        ? { giorno: r.missioni.giorno, fatte: r.missioni.fatte.filter((x): x is string => typeof x === 'string').slice(0, 10) }
+        : { giorno: '', fatte: [] },
+    indizi: Array.isArray(r.indizi)
+      ? r.indizi
+          .map((i) => validaIndizio(i))
+          .filter((i): i is Indizio => !!i)
+          .slice(-40)
+      : [],
   };
 }
 

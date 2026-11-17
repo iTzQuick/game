@@ -7,6 +7,7 @@ import type { ClassId } from './constants';
 import type { Member, RunState } from '../net/roomLogic';
 import type { BuildingId } from '../progress/defs';
 import type { BuildingState, GroupData } from '../progress/model';
+import type { Indizio, Narrazione } from '../narrator/core';
 
 export type Quality = 'bassa' | 'media' | 'alta';
 export type LinkKind = 'local' | 'p2p' | 'relay' | 'connecting';
@@ -66,6 +67,11 @@ export interface RoomView {
   group: string | null;
   base: Partial<Record<BuildingId, BuildingState>>;
   gstats: GroupData['stats'];
+  narrazione: Narrazione | null;
+  fatte: string[];
+  indizi: Indizio[];
+  diario: GroupData['diario'];
+  statoNarratore: string;
 }
 
 interface GameStore {
@@ -92,7 +98,7 @@ interface GameStore {
   building: string | null;
 }
 
-export type Panel = 'personaggio' | 'zaino' | 'forgia' | 'base' | 'biblioteca' | 'trofei' | 'account' | null;
+export type Panel = 'personaggio' | 'zaino' | 'forgia' | 'base' | 'biblioteca' | 'trofei' | 'account' | 'missioni' | null;
 
 const SETTINGS_KEY = 'fratture.settings';
 const NAME_KEY = 'fratture.name';
@@ -140,6 +146,11 @@ export const emptyRoom = (): RoomView => ({
   group: null,
   base: {},
   gstats: { fratture: 0, bosses: 0, kills: 0 },
+  narrazione: null,
+  fatte: [],
+  indizi: [],
+  diario: [],
+  statoNarratore: '',
 });
 
 export const useGame = create<GameStore>(() => ({

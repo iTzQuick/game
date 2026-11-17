@@ -66,7 +66,12 @@ export const INTERACTABLES: Interactable[] = [
     radius: 3.8,
     label: () => 'Ascolta il Custode Muto',
     act: () => {
-      const lines = CUSTODE_LINES[custodeTurn % CUSTODE_LINES.length];
+      // le battute del giorno del narratore, oppure quelle fisse
+      const room = getGame().room;
+      const pool: string[][] = room.narrazione?.custode.length ? room.narrazione.custode : CUSTODE_LINES;
+      const lines = [...pool[custodeTurn % pool.length]];
+      const left = (room.narrazione?.missioni ?? []).filter((m) => !room.fatte.includes(m.id)).length;
+      if (custodeTurn === 0 && left > 0) lines.push(`Le missioni di oggi ti aspettano nel rotolo 📜 (tasto M): ancora ${left === 1 ? 'una' : left}.`);
       custodeTurn++;
       openDialog('Il Custode Muto', lines);
     },
@@ -131,9 +136,9 @@ export const INTERACTABLES: Interactable[] = [
 ];
 
 /** Chiede all'host di aprire, lasciare o abbandonare la Frattura. */
-export function runRequest(a: 'start' | 'leave' | 'abandon') {
+export function runRequest(a: 'start' | 'leave' | 'abandon', missionId?: string) {
   const room = getRoom();
-  if (room?.hostId) emitCombat({ t: 'runreq', a }, { to: room.hostId });
+  if (room?.hostId) emitCombat(missionId ? { t: 'runreq', a, m: missionId } : { t: 'runreq', a }, { to: room.hostId });
 }
 
 /** Cose con cui interagire dentro la Frattura (per ora: il portale d'uscita dopo il boss). */

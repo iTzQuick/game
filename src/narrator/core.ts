@@ -105,6 +105,33 @@ export function difficolta(m: Pick<Missione, 'obiettivo' | 'modificatori'>): num
   return Math.min(4, base + m.modificatori.length);
 }
 
+/** Lo stato di una missione durante la Frattura (vedi MissioneInCorso in net/roomLogic.ts). */
+export interface Avanzamento {
+  obiettivo: Obiettivo;
+  conta: number;
+  fallita: boolean;
+  inizio: number;
+}
+
+/** A Frattura richiusa: la missione è compiuta? */
+export function missioneCompiuta(m: Avanzamento, adesso: number): boolean {
+  if (m.fallita) return false;
+  switch (m.obiettivo.tipo) {
+    case 'sconfiggi':
+      return m.conta >= m.obiettivo.quanti;
+    case 'veloce':
+      return m.inizio > 0 && adesso - m.inizio <= m.obiettivo.minuti * 60_000;
+    default:
+      return true;
+  }
+}
+
+/** Ancora in tempo? (obiettivo "veloce"): secondi rimasti, oppure null. */
+export function secondiRimasti(m: Avanzamento, adesso: number): number | null {
+  if (m.obiettivo.tipo !== 'veloce' || !m.inizio) return null;
+  return Math.max(0, Math.ceil((m.inizio + m.obiettivo.minuti * 60_000 - adesso) / 1000));
+}
+
 // --- Il giorno ------------------------------------------------------------------------
 
 /** Data di oggi a Roma (AAAA-MM-GG): le missioni cambiano a mezzanotte italiana. */
