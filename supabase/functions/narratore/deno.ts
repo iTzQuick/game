@@ -1,13 +1,27 @@
 // Collegamento a Supabase e Claude (gira su Supabase, in Deno).
-// Le chiavi NON stanno qui: SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY le mette
+// Le chiavi NON stanno qui: l'indirizzo e la chiave segreta del progetto le mette
 // Supabase da solo, ANTHROPIC_API_KEY è il segreto salvato nel pannello.
+// Il token di chi chiama lo controlla rispondi() (con auth.getUser): la verifica
+// JWT della piattaforma si può lasciare spenta.
 
 import Anthropic from 'npm:@anthropic-ai/sdk@1.9.0';
 import { createClient } from 'npm:@supabase/supabase-js@2.119.0';
 import { rispondi, type Archivio, type Claude, type RispostaClaude } from '../../../src/narrator/server.ts';
 import { validaIndizio, type Indizio } from '../../../src/narrator/core.ts';
 
-const db = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', {
+/** Chiave segreta del progetto: quella nuova (sb_secret_…) se c'è, altrimenti la vecchia service_role. */
+function chiaveSegreta(): string {
+  try {
+    const nuove = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? 'null');
+    const k = nuove && typeof nuove === 'object' ? (nuove.default ?? Object.values(nuove)[0]) : null;
+    if (typeof k === 'string' && k) return k;
+  } catch {
+    /* non c'è: si usa l'altra */
+  }
+  return Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+}
+
+const db = createClient(Deno.env.get('SUPABASE_URL') ?? '', chiaveSegreta(), {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY'), timeout: 110_000, maxRetries: 1 });
