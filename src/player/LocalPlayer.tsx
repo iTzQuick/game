@@ -35,6 +35,8 @@ export interface LocalDebug {
   camYaw: number;
   /** Solo per i test automatici: sposta il giocatore. */
   teleport?: (x: number, z: number) => void;
+  /** Solo per i test automatici e le foto: gira la telecamera. */
+  setCamYaw?: (yaw: number) => void;
 }
 
 /** Accesso per i test end-to-end e le statistiche. */
@@ -190,6 +192,9 @@ export function LocalPlayer() {
 
   useEffect(() => {
     localDebug.teleport = (x, z) => ctx.teleport(x, z);
+    localDebug.setCamYaw = (yaw) => {
+      sim.camYaw = yaw;
+    };
     combat.onVarcoPass = () => onVarcoPass(ctx);
     return () => {
       combat.onVarcoPass = null;

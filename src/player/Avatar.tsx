@@ -15,6 +15,7 @@ import { REVIVE_RADIUS } from '../combat/defs';
 import { NEUTRAL, SKIN, toon } from './materials';
 import { HERO_MODELS, newCtrl } from './RiggedModel';
 import { ModelOr } from './models';
+import { Icon } from '../ui/Icon';
 
 export interface Pose {
   speed: number;
@@ -309,7 +310,7 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
       <mesh ref={downRing} material={auraMats.down} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} visible={false}>
         <ringGeometry args={[REVIVE_RADIUS - 0.12, REVIVE_RADIUS, 40]} />
       </mesh>
-      <NameTag playerId={playerId} name={name} icon={cls?.icon} show={showName} />
+      <NameTag playerId={playerId} name={name} icon={classId ? `classe-${classId}` : undefined} show={showName} />
     </group>
   );
 }
@@ -444,7 +445,7 @@ function NameTag({ playerId, name, icon, show }: { playerId: string; name: strin
         {show && (
           <div className="nametag-label">
             {isHost && <span title="Host">👑</span>}
-            {icon && <span>{icon}</span>}
+            {icon && <Icon name={icon} size={16} />}
             <span>{name}</span>
           </div>
         )}

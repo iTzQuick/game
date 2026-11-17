@@ -7,6 +7,7 @@ import { advanceDialog, setGame, updateSettings, useGame, type Quality } from '.
 import { getRoom } from '../net/room';
 import { StatsPanel, linkLabel } from './Stats';
 import { CombatHud } from './CombatHud';
+import { Icon } from './Icon';
 import { ProgressPanels } from './ProgressPanels';
 import { runRequest } from '../world/layout';
 
@@ -75,7 +76,7 @@ function RoomPanel() {
           return (
             <li key={m.id} className={m.id === selfId ? 'me' : ''}>
               <span className="cls-dot" style={{ background: cls ? CLASSES[cls].color : '#5d5868' }}>
-                {cls ? CLASSES[cls].icon : '?'}
+                {cls ? <Icon name={`classe-${cls}`} size={22} /> : '?'}
               </span>
               <span className="pname">
                 {m.name}
@@ -214,7 +215,9 @@ function ClassPicker() {
                 disabled={takenByOther}
                 onClick={() => pick(c)}
               >
-                <div className="class-icon">{info.icon}</div>
+                <div className="class-icon">
+                  <Icon name={`classe-${c}`} size={44} />
+                </div>
                 <div className="class-name">{info.name}</div>
                 <div className="class-role">{info.role}</div>
                 <ul className="class-abilities">

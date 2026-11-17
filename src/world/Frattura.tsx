@@ -9,7 +9,8 @@ import * as THREE from 'three';
 import { CORRIDOR_WIDTH, WALL_HEIGHT, generateDungeon, wallBoxes, type Dungeon } from '../combat/dungeon';
 import { useGame, type Quality } from '../game/store';
 import type { RunState } from '../net/roomLogic';
-import { stone } from '../player/materials';
+import { SkyBand } from './SkyBand';
+import { SURFACES } from './textures';
 
 const ROOM_TINTS = ['#2fd6a0', '#8fd14f', '#ff4f9a', '#b48cff', '#e9e4ff', '#19d3c5'];
 
@@ -28,6 +29,7 @@ export function Frattura({ quality }: { quality: Quality }) {
       <color attach="background" args={['#05040a']} />
       <fog attach="fog" args={['#0d0818', 18, 70]} />
       <Stars radius={120} depth={40} count={quality === 'bassa' ? 800 : 2000} factor={4} fade speed={0.3} />
+      <SkyBand dim={0.45} />
       <hemisphereLight args={['#5a4a90', '#08040e', 0.8]} />
       <ambientLight intensity={0.2} color="#8d7fc4" />
       <directionalLight
@@ -78,18 +80,18 @@ function Geometry({ d }: { d: Dungeon }) {
       </RigidBody>
 
       {floors.map((f, i) => (
-        <mesh key={`fm${i}`} position={[(f.x0 + f.x1) / 2, -0.5, (f.z0 + f.z1) / 2]} material={stone(f.tint < 0 ? '#2a2433' : f.tint % 2 ? '#3a3346' : '#352f42')} receiveShadow>
+        <mesh key={`fm${i}`} position={[(f.x0 + f.x1) / 2, -0.5, (f.z0 + f.z1) / 2]} material={f.tint < 0 ? SURFACES.dungeonFloor('#2a2433', '#b9b0c8') : f.tint % 2 ? SURFACES.dungeonFloor('#3a3346', '#f2ecfa') : SURFACES.dungeonFloor('#352f42')} receiveShadow>
           <boxGeometry args={[f.x1 - f.x0, 1, f.z1 - f.z0]} />
         </mesh>
       ))}
       {walls.map((w, i) => (
-        <mesh key={`wm${i}`} position={[w.x, WALL_HEIGHT / 2, w.z]} material={stone('#4a4355')} castShadow receiveShadow>
+        <mesh key={`wm${i}`} position={[w.x, WALL_HEIGHT / 2, w.z]} material={SURFACES.dungeonWall('#4a4355')} castShadow receiveShadow>
           <boxGeometry args={[w.hx * 2, WALL_HEIGHT, w.hz * 2]} />
         </mesh>
       ))}
       {d.rooms.flatMap((r) =>
         r.pillars.map((p, i) => (
-          <mesh key={`pm${r.i}-${i}`} position={[p.x, p.h / 2, p.z]} material={stone('#4f4760')} castShadow receiveShadow>
+          <mesh key={`pm${r.i}-${i}`} position={[p.x, p.h / 2, p.z]} material={SURFACES.dungeonWall('#4f4760')} castShadow receiveShadow>
             <cylinderGeometry args={[p.r * 0.92, p.r, p.h, 7]} />
           </mesh>
         )),

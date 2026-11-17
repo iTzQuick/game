@@ -10,6 +10,7 @@ import { combatRoomCount } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
 import { press } from '../game/input';
+import { Icon } from './Icon';
 import { useProgress } from '../progress/store';
 import { classProgress } from '../progress/model';
 
@@ -58,7 +59,12 @@ export function CombatHud({ touch }: { touch: boolean }) {
               Liv. {level} · {Math.ceil(m.hp)} / {m.maxHp}
             </span>
           </div>
-          {m.potions > 0 && <div className="potions">🧪 {m.potions}{!touch && <kbd>H</kbd>}</div>}
+          {m.potions > 0 && (
+            <div className="potions">
+              <Icon name="pozione" size={20} /> {m.potions}
+              {!touch && <kbd>H</kbd>}
+            </div>
+          )}
         </div>
       )}
       {!touch && cls && <AbilityBar cls={cls} />}
@@ -153,6 +159,7 @@ function AbilityBar({ cls }: { cls: ClassId }) {
             onClick={() => press(`ab${slot}` as 'abQ')}
             title={`${abilityName(cls, slot)} (${slot})`}
           >
+            <Icon name={`${cls}-${slot}`} size={32} className="ab-icon" />
             <kbd>{slot}</kbd>
             <span className="ab-name">{abilityName(cls, slot)}</span>
             {!st.ready && !ultra && st.seconds > 0 && <span className="ab-cd">{st.seconds}</span>}

@@ -68,7 +68,14 @@ const url = (file: string) => `${import.meta.env.BASE_URL}models/${file}`;
 /** Eroi con il modello pronto. Le classi senza modello usano ancora l'eroe di forme semplici. */
 export const HERO_MODELS: Partial<Record<ClassId, ModelDef>> = {};
 export const ENEMY_MODELS: Partial<Record<EnemyType, ModelDef>> = {};
-export const PROP_MODELS: Record<string, { url: string; height: number; yaw?: number }> = {};
+export interface PropDef {
+  url: string;
+  height: number;
+  /** larghezza massima in metri (per oggetti bassi e larghi) */
+  maxWidth?: number;
+  yaw?: number;
+}
+export const PROP_MODELS: Record<string, PropDef> = {};
 
 /**
  * `?modelli=0` nell'indirizzo gioca con le forme semplici: per i dispositivi
@@ -80,7 +87,7 @@ export const MODELS_ENABLED = typeof location === 'undefined' || new URLSearchPa
 export function registerModels(m: {
   heroes?: Partial<Record<ClassId, Omit<ModelDef, 'url'> & { file: string }>>;
   enemies?: Partial<Record<EnemyType, Omit<ModelDef, 'url'> & { file: string }>>;
-  props?: Record<string, { file: string; height: number; yaw?: number }>;
+  props?: Record<string, Omit<PropDef, 'url'> & { file: string }>;
 }) {
   if (!MODELS_ENABLED) return;
   for (const [k, v] of Object.entries(m.heroes ?? {})) if (v) HERO_MODELS[k as ClassId] = { ...v, url: url(v.file) };
@@ -88,12 +95,14 @@ export function registerModels(m: {
   for (const [k, v] of Object.entries(m.props ?? {})) PROP_MODELS[k] = { ...v, url: url(v.file) };
 }
 
-/** Scala e spostamento per avere l'altezza voluta con i piedi a terra. */
-function fit(object: THREE.Object3D, height: number) {
+/** Scala e spostamento per avere l'altezza voluta (e al massimo la larghezza voluta) con i piedi a terra. */
+function fit(object: THREE.Object3D, height: number, maxWidth?: number) {
   object.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
-  const s = size.y > 0 ? height / size.y : 1;
+  let s = size.y > 0 ? height / size.y : 1;
+  const wide = Math.max(size.x, size.z);
+  if (maxWidth && wide * s > maxWidth) s = maxWidth / wide;
   return { scale: s, y: -box.min.y * s };
 }
 
@@ -265,10 +274,15 @@ function anchorGear(scene: THREE.Object3D, gear: GearDef[], metersPerUnit: numbe
   return out;
 }
 
-/** Oggetto statico (portali, edifici…). */
-export function PropModel({ name }: { name: string }) {
+/**
+ * Oggetto statico (portali, edifici, colonne, armi…). `height`/`maxWidth`
+ * sostituiscono le misure registrate; `y` è l'altezza della base.
+ */
+export function PropModel({ name, height, maxWidth, y = 0 }: { name: string; height?: number; maxWidth?: number; y?: number }) {
   const def = PROP_MODELS[name];
   const gltf = useGLTF(def.url);
+  const h = height ?? def.height;
+  const w = maxWidth ?? def.maxWidth;
   const { scene, place } = useMemo(() => {
     const scene = gltf.scene.clone(true);
     scene.traverse((o) => {
@@ -278,10 +292,10 @@ export function PropModel({ name }: { name: string }) {
         mesh.receiveShadow = true;
       }
     });
-    return { scene, place: fit(gltf.scene, def.height) };
-  }, [gltf, def]);
+    return { scene, place: fit(gltf.scene, h, w) };
+  }, [gltf, h, w]);
   return (
-    <group position={[0, place.y, 0]} rotation={[0, def.yaw ?? 0, 0]} scale={place.scale}>
+    <group position={[0, place.y + y, 0]} rotation={[0, def.yaw ?? 0, 0]} scale={place.scale}>
       <primitive object={scene} />
     </group>
   );

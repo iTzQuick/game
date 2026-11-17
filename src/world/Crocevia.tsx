@@ -12,6 +12,9 @@ import { stone } from '../player/materials';
 import { ALTARS, ISLAND_RADIUS, PILLARS, PORTALS, RIFT, seeded } from './layout';
 import { Buildings } from './Buildings';
 import { PropOr } from '../player/models';
+import { SkyBand } from './SkyBand';
+import { SURFACES } from './textures';
+import { Icon } from '../ui/Icon';
 
 /** Rumore ripetibile per posizione: i vertici condivisi restano attaccati. */
 function hash3(x: number, y: number, z: number): number {
@@ -47,7 +50,7 @@ export function Crocevia({ quality }: { quality: Quality }) {
         <ClassAltar key={a.cls} cls={a.cls} x={a.x} z={a.z} quality={quality} />
       ))}
       {PORTALS.map((p) => (
-        <Portal key={p.world.id} x={p.x} z={p.z} angle={p.angle} tint={p.world.tint} name={p.world.name} quality={quality} />
+        <Portal key={p.world.id} id={p.world.id} x={p.x} z={p.z} angle={p.angle} tint={p.world.tint} name={p.world.name} quality={quality} />
       ))}
       {PILLARS.map((p, i) => (
         <Pillar key={i} {...p} />
@@ -66,6 +69,7 @@ function Sky({ quality }: { quality: Quality }) {
       <color attach="background" args={['#07060d']} />
       <fog attach="fog" args={['#140d24', 28, 125]} />
       <Stars radius={170} depth={50} count={quality === 'bassa' ? 1500 : 4000} factor={5} saturation={0.6} fade speed={0.4} />
+      <SkyBand moonAt={[80, 95, -170]} />
       <Sparkles
         count={quality === 'bassa' ? 40 : quality === 'media' ? 110 : 220}
         scale={[48, 10, 48]}
@@ -145,8 +149,8 @@ function Island() {
       <RigidBody type="fixed" colliders={false}>
         <CylinderCollider args={[1.2, ISLAND_RADIUS - 0.4]} position={[0, -1.2, 0]} />
       </RigidBody>
-      <mesh geometry={geos.top} material={stone('#47404f')} position={[0, -1.2, 0]} receiveShadow />
-      <mesh geometry={geos.under} material={stone('#2a2531')} position={[0, -2.2 - 12, 0]} />
+      <mesh geometry={geos.top} material={SURFACES.ground()} position={[0, -1.2, 0]} receiveShadow />
+      <mesh geometry={geos.under} material={SURFACES.rock()} position={[0, -2.2 - 12, 0]} />
       <mesh geometry={geos.runeInner} material={runeMat} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} />
       <mesh geometry={geos.runeOuter} material={runeMat} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} />
       {PORTALS.map((p) => (
@@ -155,7 +159,7 @@ function Island() {
         </mesh>
       ))}
       {slabs.map((s, i) => (
-        <mesh key={i} material={stone(s.c)} position={[s.x, 0.015, s.z]} rotation={[0, s.r, 0]} scale={[s.s, 1, s.s]} receiveShadow>
+        <mesh key={i} material={SURFACES.ground(s.c, s.c === '#4b4458' ? '#e4dcef' : '#c9c0d6')} position={[s.x, 0.015, s.z]} rotation={[0, s.r, 0]} scale={[s.s, 1, s.s]} receiveShadow>
           <cylinderGeometry args={[1, 1, 0.05, 6]} />
         </mesh>
       ))}
@@ -179,6 +183,17 @@ function Custode({ quality }: { quality: Quality }) {
         <cylinderGeometry args={[2.4, 2.6, 0.36, 10]} />
       </mesh>
       <group ref={figure}>
+        <PropOr name="custode-muto" fallback={<CustodeShapes eyeMat={eyeMat} />} />
+      </group>
+      {quality !== 'bassa' && <pointLight position={[0, 1.2, 1.4]} color="#9f7bff" intensity={6} distance={9} decay={1.6} />}
+    </group>
+  );
+}
+
+/** Il Custode di forme semplici (se il modello non c'è). */
+function CustodeShapes({ eyeMat }: { eyeMat: THREE.Material }) {
+  return (
+      <group>
         {/* veste */}
         <mesh material={stone('#1c1726', 0.8)} position={[0, 1.3, 0]} castShadow>
           <coneGeometry args={[0.95, 2.6, 8]} />
@@ -198,8 +213,6 @@ function Custode({ quality }: { quality: Quality }) {
           <boxGeometry args={[0.09, 0.025, 0.02]} />
         </mesh>
       </group>
-      {quality !== 'bassa' && <pointLight position={[0, 1.2, 1.4]} color="#9f7bff" intensity={6} distance={9} decay={1.6} />}
-    </group>
   );
 }
 
@@ -240,17 +253,24 @@ function ClassAltar({ cls, x, z, quality }: { cls: ClassId; x: number; z: number
       <RigidBody type="fixed" colliders={false}>
         <CylinderCollider args={[0.5, 0.72]} position={[0, 0.5, 0]} />
       </RigidBody>
-      <mesh material={stone('#3d3747')} position={[0, 0.5, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.55, 0.75, 1, 6]} />
-      </mesh>
-      <mesh material={stone('#524a5e')} position={[0, 1.04, 0]}>
-        <cylinderGeometry args={[0.68, 0.6, 0.1, 6]} />
-      </mesh>
+      <PropOr
+        name="piedistallo"
+        fallback={
+          <>
+            <mesh material={stone('#3d3747')} position={[0, 0.5, 0]} castShadow receiveShadow>
+              <cylinderGeometry args={[0.55, 0.75, 1, 6]} />
+            </mesh>
+            <mesh material={stone('#524a5e')} position={[0, 1.04, 0]}>
+              <cylinderGeometry args={[0.68, 0.6, 0.1, 6]} />
+            </mesh>
+          </>
+        }
+      />
       <mesh ref={emblem} geometry={geo} material={mat} position={[0, 1.75, 0]} castShadow />
       {mine && quality !== 'bassa' && <pointLight position={[0, 1.8, 0]} color={info.color} intensity={4} distance={6} />}
       <Html position={[0, 2.55, 0]} center distanceFactor={7} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
         <div className={`altar-label${taken ? ' taken' : ''}${mine ? ' mine' : ''}`} style={{ borderColor: info.color }}>
-          <span>{info.icon}</span> {info.name}
+          <Icon name={`classe-${cls}`} size={18} /> {info.name}
           {taken && <small> · {holderName ?? '…'}</small>}
           {mine && <small> · tu</small>}
         </div>
@@ -260,6 +280,7 @@ function ClassAltar({ cls, x, z, quality }: { cls: ClassId; x: number; z: number
 }
 
 function Portal({
+  id,
   x,
   z,
   angle,
@@ -267,6 +288,7 @@ function Portal({
   name,
   quality,
 }: {
+  id: string;
   x: number;
   z: number;
   angle: number;
@@ -314,19 +336,24 @@ function Portal({
       <mesh material={stone('#3a3443')} position={[0, 0.2, 0]} receiveShadow castShadow>
         <cylinderGeometry args={[3.2, 3.4, 0.4, 10]} />
       </mesh>
-      {/* l'arco: modello 3D di Higgsfield, o le forme semplici se non c'è */}
+      {/* l'arco: quello del suo mondo, o quello generico, o le forme semplici */}
       <group position={[0, 0.4, 0]}>
         <PropOr
-          name="portale"
+          name={`portale-${id}`}
           fallback={
-            <group>
-              <mesh geometry={ringGeo} material={stone('#5a5266')} castShadow position={[0, 2.6, 0]} />
-              {[-2.2, 2.2].map((px) => (
-                <mesh key={px} material={stone('#4a4355')} position={[px, 0.5, 0]} castShadow>
-                  <boxGeometry args={[0.9, 1.1, 0.9]} />
-                </mesh>
-              ))}
-            </group>
+            <PropOr
+              name="portale"
+              fallback={
+                <group>
+                  <mesh geometry={ringGeo} material={stone('#5a5266')} castShadow position={[0, 2.6, 0]} />
+                  {[-2.2, 2.2].map((px) => (
+                    <mesh key={px} material={stone('#4a4355')} position={[px, 0.5, 0]} castShadow>
+                      <boxGeometry args={[0.9, 1.1, 0.9]} />
+                    </mesh>
+                  ))}
+                </group>
+              }
+            />
           }
         />
       </group>
@@ -415,9 +442,17 @@ function Pillar({ x, z, h, fallen }: { x: number; z: number; h: number; fallen: 
         <RigidBody type="fixed" colliders={false}>
           <CylinderCollider args={[1.8, 0.62]} />
         </RigidBody>
-        <mesh material={stone('#4a4355')} castShadow receiveShadow>
-          <cylinderGeometry args={[0.6, 0.66, 3.6, 7]} />
-        </mesh>
+        {/* colonna caduta: il modello è in piedi, qui è coricato e centrato */}
+        <PropOr
+          name="colonna"
+          height={3.6}
+          y={-1.8}
+          fallback={
+            <mesh material={stone('#4a4355')} castShadow receiveShadow>
+              <cylinderGeometry args={[0.6, 0.66, 3.6, 7]} />
+            </mesh>
+          }
+        />
       </group>
     );
   }
@@ -426,12 +461,22 @@ function Pillar({ x, z, h, fallen }: { x: number; z: number; h: number; fallen: 
       <RigidBody type="fixed" colliders={false}>
         <CylinderCollider args={[h / 2, 0.68]} position={[0, h / 2, 0]} />
       </RigidBody>
-      <mesh material={stone('#4a4355')} position={[0, h / 2, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.6, 0.7, h, 7]} />
-      </mesh>
-      <mesh material={stone('#554d60')} position={[0, h + 0.08, 0]} rotation={[0.25, 0.4, 0.15]}>
-        <cylinderGeometry args={[0.62, 0.6, 0.3, 7]} />
-      </mesh>
+      <group rotation={[0, x * 1.7 + z, 0]}>
+        <PropOr
+          name={h >= 2.6 ? 'colonna' : 'moncone'}
+          height={h + 0.2}
+          fallback={
+            <>
+              <mesh material={stone('#4a4355')} position={[0, h / 2, 0]} castShadow receiveShadow>
+                <cylinderGeometry args={[0.6, 0.7, h, 7]} />
+              </mesh>
+              <mesh material={stone('#554d60')} position={[0, h + 0.08, 0]} rotation={[0.25, 0.4, 0.15]}>
+                <cylinderGeometry args={[0.62, 0.6, 0.3, 7]} />
+              </mesh>
+            </>
+          }
+        />
+      </group>
     </group>
   );
 }
@@ -463,7 +508,7 @@ function FloatingRocks({ count }: { count: number }) {
     m.instanceMatrix.needsUpdate = true;
   });
 
-  return <instancedMesh ref={ref} args={[geo, stone('#3a3443'), count]} />;
+  return <instancedMesh ref={ref} args={[geo, SURFACES.rock('#3a3443'), count]} />;
 }
 
 /** Portali enormi e spezzati, lontanissimi: altri mondi, irraggiungibili. */
