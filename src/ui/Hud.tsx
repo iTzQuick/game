@@ -10,6 +10,7 @@ import { CombatHud, TopStatus } from './CombatHud';
 import { Icon } from './Icon';
 import { ProgressPanels } from './ProgressPanels';
 import { VotePanel, useCittaStory } from './CittaPanel';
+import { isStandalone } from './AppShell';
 import { runRequest } from '../world/layout';
 
 export function Hud({ touch }: { touch: boolean }) {
@@ -46,7 +47,8 @@ export function Hud({ touch }: { touch: boolean }) {
       {helpOpen && <HelpPanel touch={touch} />}
       <ProgressPanels />
       <VotePanel />
-      {touch && <OrientationHint />}
+      {/* dall'icona in Home c'è già la schermata "gira il telefono" (AppShell) */}
+      {touch && !isStandalone() && <OrientationHint />}
     </div>
   );
 }

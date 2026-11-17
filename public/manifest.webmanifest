@@ -1,0 +1,17 @@
+{
+  "name": "Le Fratture",
+  "short_name": "Le Fratture",
+  "description": "Action-RPG cooperativo per 1-4 amici, nel browser.",
+  "lang": "it",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07060d",
+  "theme_color": "#07060d",
+  "icons": [
+    { "src": "ui/app/icona-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "ui/app/icona-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "ui/app/icona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
