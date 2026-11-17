@@ -13,12 +13,15 @@ import { addPing, advanceDialog, controlsBlocked, getGame, isTouchDevice, setGam
 import { getRoom } from '../net/room';
 import type { AnimState } from '../net/interpolation';
 import { fratturaInteractables, nearestInteractable, RIFT } from '../world/layout';
-import { basicAttack, castAbility, onVarcoPass, resetAbilities, tickAbilities, type PlayerCtx } from '../combat/abilities';
+import { basicAttack, castAbility, dodgeBoon, onVarcoPass, resetAbilities, tickAbilities, type PlayerCtx } from '../combat/abilities';
+import { BOON, boonLevel, boonsForRun, modsWithBoons } from '../combat/boons';
 import { CLASS_STATS } from '../combat/defs';
 import { checkpoint, generateDungeon } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
 import { emitCombat } from '../combat/bus';
+import { shakeOffset } from '../combat/feel';
+import { sfx } from '../audio/sfx';
 import { modsFor } from '../progress/store';
 import { isBuilt } from '../progress/model';
 import { Avatar, newPose, tickPose } from './Avatar';
@@ -152,6 +155,7 @@ export function LocalPlayer() {
       desiredCam: new THREE.Vector3(),
       ray: new rapier.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }),
       ndc: new THREE.Vector3(),
+      shake: { x: 0, y: 0, z: 0, roll: 0 },
     }),
     [rapier],
   );
@@ -239,8 +243,9 @@ export function LocalPlayer() {
     const game = getGame();
     const run = game.room.run;
     const stats = CLASS_STATS[classId ?? 'none'];
-    // bonus di talenti e oggetti
-    const mods = modsFor(classId);
+    // bonus di talenti e oggetti, più i poteri scelti in questa Frattura
+    boonsForRun(run && run.phase !== 'countdown' ? run.id : -1);
+    const mods = modsWithBoons(modsFor(classId));
     combat.mods = mods;
     const maxHp = Math.round(stats.hp * (1 + mods.hpPct) + mods.hpFlat);
 
@@ -366,8 +371,10 @@ export function LocalPlayer() {
     // schivata: scatto rapido con un attimo di invulnerabilità
     if (alive && !blocked && consume('dodge') && sim.dodgeCd <= 0 && sim.dodgeLeft <= 0) {
       sim.dodgeLeft = MOVE.dodgeTime;
-      sim.dodgeCd = MOVE.dodgeCooldown;
+      sim.dodgeCd = MOVE.dodgeCooldown * (1 - BOON.passo.cdr * boonLevel('passo'));
       combat.me.invulnUntil = Math.max(combat.me.invulnUntil, now + MOVE.dodgeIFrames * 1000);
+      sfx.dodge();
+      dodgeBoon(sim.pos.x, sim.pos.z);
       if (wishLen > 0.1) sim.dodgeDir.copy(tmp.wish);
       else sim.dodgeDir.set(Math.sin(sim.yaw), 0, Math.cos(sim.yaw));
       sim.yaw = Math.atan2(sim.dodgeDir.x, sim.dodgeDir.z);
@@ -508,7 +515,13 @@ export function LocalPlayer() {
     if (sim.camPos.lengthSq() === 0 || sim.camPos.distanceTo(tmp.desiredCam) > 25) sim.camPos.copy(tmp.desiredCam);
     sim.camPos.lerp(tmp.desiredCam, 1 - Math.exp(-20 * dt));
     camera.position.copy(sim.camPos);
+    // scossa dei colpi forti (non tocca la posizione "vera" della telecamera)
+    const sh = shakeOffset(dt, tmp.shake);
+    camera.position.x += sh.x;
+    camera.position.y += sh.y;
+    camera.position.z += sh.z;
     camera.lookAt(tmp.target);
+    if (sh.roll) camera.rotateZ(sh.roll);
 
     // --- interazioni ---
     const list = inRun && combat.dungeon && run ? fratturaInteractables(combat.dungeon, run.phase === 'complete') : undefined;

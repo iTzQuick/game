@@ -7,6 +7,7 @@ import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { displayName, useGame, type Ping } from '../game/store';
 import { combat } from '../combat/runtime';
+import { orbState } from '../combat/boons';
 
 type Vec3 = [number, number, number];
 
@@ -87,6 +88,200 @@ export function spawnPuff(x: number, y: number, z: number, color: string) {
   const o = flashes.find((q) => !q.active) ?? flashes[0];
   Object.assign(o, { active: true, t: 0, dur: 0.35, x, y, z, r: 1.1 });
   o.color.set(color);
+}
+
+// --- scintille e schegge (colpi a segno, nemici che muoiono) ---------------------
+
+interface Spark {
+  life: number;
+  max: number;
+  p: THREE.Vector3;
+  v: THREE.Vector3;
+  s: number;
+  color: THREE.Color;
+}
+const SPARKS = 180;
+const sparks: Spark[] = Array.from({ length: SPARKS }, () => ({
+  life: 0,
+  max: 1,
+  p: new THREE.Vector3(),
+  v: new THREE.Vector3(),
+  s: 1,
+  color: new THREE.Color(),
+}));
+let sparkNext = 0;
+
+/**
+ * Schizzi di luce che volano via e ricadono. `dir` (opzionale) è la direzione del
+ * colpo sul piano: le scintille partono soprattutto da quella parte.
+ */
+export function spawnSparks(x: number, y: number, z: number, color: string, n: number, power = 1, dir?: [number, number]) {
+  for (let i = 0; i < n; i++) {
+    const o = sparks[sparkNext];
+    sparkNext = (sparkNext + 1) % SPARKS;
+    const a = Math.random() * Math.PI * 2;
+    const sp = (2.5 + Math.random() * 4.5) * power;
+    let vx = Math.sin(a) * sp;
+    let vz = Math.cos(a) * sp;
+    if (dir) {
+      vx = vx * 0.45 + dir[0] * sp * 0.9;
+      vz = vz * 0.45 + dir[1] * sp * 0.9;
+    }
+    o.p.set(x, y, z);
+    o.v.set(vx, (1.5 + Math.random() * 4) * power, vz);
+    o.max = o.life = 0.35 + Math.random() * 0.35 * power;
+    o.s = (0.035 + Math.random() * 0.045) * Math.min(1.8, power);
+    o.color.set(color);
+  }
+}
+
+function Sparks() {
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const geo = useMemo(() => new THREE.OctahedronGeometry(1, 0), []);
+  const mat = useMemo(
+    () => new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+    [],
+  );
+  const m4 = useMemo(() => new THREE.Matrix4(), []);
+  const q = useMemo(() => new THREE.Quaternion(), []);
+  const sc = useMemo(() => new THREE.Vector3(), []);
+  const c = useMemo(() => new THREE.Color(), []);
+  useFrame((_, dtRaw) => {
+    const im = ref.current;
+    if (!im) return;
+    const dt = Math.min(dtRaw, 0.1);
+    let n = 0;
+    for (const o of sparks) {
+      if (o.life <= 0) continue;
+      o.life -= dt;
+      if (o.life <= 0) continue;
+      o.v.y -= 14 * dt;
+      o.v.multiplyScalar(1 - dt * 1.5);
+      o.p.addScaledVector(o.v, dt);
+      if (o.p.y < 0.05) {
+        o.p.y = 0.05;
+        o.v.y = Math.abs(o.v.y) * 0.3;
+      }
+      const k = o.life / o.max;
+      // allungate nella direzione in cui volano
+      q.setFromUnitVectors(UP, sc.copy(o.v).normalize());
+      const len = Math.min(3, 1 + o.v.length() * 0.18);
+      sc.set(o.s * k, o.s * len * k, o.s * k);
+      m4.compose(o.p, q, sc);
+      im.setMatrixAt(n, m4);
+      im.setColorAt(n, c.copy(o.color).multiplyScalar(0.6 + k));
+      n++;
+    }
+    im.count = n;
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[geo, mat, SPARKS]} frustumCulled={false} />;
+}
+const UP = new THREE.Vector3(0, 1, 0);
+
+// --- fulmini (Scintilla del Crocevia) ---------------------------------------------
+
+interface Zap {
+  t: number;
+  a: THREE.Vector3;
+  b: THREE.Vector3;
+  color: THREE.Color;
+}
+const ZAPS = 6;
+const ZAP_LIFE = 0.22;
+const ZAP_SEG = 9;
+const zaps: Zap[] = Array.from({ length: ZAPS }, () => ({ t: 1, a: new THREE.Vector3(), b: new THREE.Vector3(), color: new THREE.Color() }));
+let zapNext = 0;
+
+/** Un fulmine a zig-zag da `a` a `b`. */
+export function spawnZap(a: Vec3, b: Vec3, color: string) {
+  const z = zaps[zapNext];
+  zapNext = (zapNext + 1) % ZAPS;
+  z.t = 0;
+  z.a.set(...a);
+  z.b.set(...b);
+  z.color.set(color);
+}
+
+function Zaps() {
+  const lines = useMemo(
+    () =>
+      zaps.map(() => {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((ZAP_SEG + 1) * 3), 3));
+        const m = new THREE.LineBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+        const l = new THREE.Line(g, m);
+        l.frustumCulled = false;
+        l.visible = false;
+        return l;
+      }),
+    [],
+  );
+  const tmp = useMemo(() => new THREE.Vector3(), []);
+  useFrame((_, dtRaw) => {
+    const dt = Math.min(dtRaw, 0.1);
+    zaps.forEach((z, i) => {
+      const l = lines[i];
+      z.t += dt;
+      l.visible = z.t < ZAP_LIFE;
+      if (!l.visible) return;
+      const pos = l.geometry.getAttribute('position') as THREE.BufferAttribute;
+      // il zig-zag cambia a ogni fotogramma: sembra vivo
+      for (let k = 0; k <= ZAP_SEG; k++) {
+        const f = k / ZAP_SEG;
+        tmp.lerpVectors(z.a, z.b, f);
+        if (k > 0 && k < ZAP_SEG) {
+          const j = 0.35 * Math.sin(Math.PI * f);
+          tmp.x += (Math.random() - 0.5) * j;
+          tmp.y += (Math.random() - 0.5) * j;
+          tmp.z += (Math.random() - 0.5) * j;
+        }
+        pos.setXYZ(k, tmp.x, tmp.y, tmp.z);
+      }
+      pos.needsUpdate = true;
+      const m = l.material as THREE.LineBasicMaterial;
+      m.color.copy(z.color);
+      m.opacity = 1 - z.t / ZAP_LIFE;
+    });
+  });
+  return (
+    <>
+      {lines.map((l, i) => (
+        <primitive key={i} object={l} />
+      ))}
+    </>
+  );
+}
+
+// --- Lune d'ombra: sfere che girano attorno al giocatore ---------------------------
+
+function Orbs() {
+  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  const geo = useMemo(() => new THREE.SphereGeometry(0.2, 12, 8), []);
+  const halo = useMemo(() => new THREE.SphereGeometry(0.38, 12, 8), []);
+  const mat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#d9c4ff', toneMapped: false }), []);
+  const haloMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#7a5cff', transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }),
+    [],
+  );
+  useFrame(() => {
+    for (let i = 0; i < 4; i++) {
+      const m = refs.current[i];
+      if (!m) continue;
+      m.visible = i < orbState.n;
+      if (m.visible) m.position.set(orbState.pos[i].x, orbState.pos[i].y, orbState.pos[i].z);
+    }
+  });
+  return (
+    <>
+      {[0, 1, 2, 3].map((i) => (
+        <mesh key={i} ref={(el) => void (refs.current[i] = el)} geometry={geo} material={mat} visible={false}>
+          <mesh geometry={halo} material={haloMat} />
+        </mesh>
+      ))}
+    </>
+  );
 }
 
 /** Raggio tra due giocatori (Raggio curativo). */
@@ -222,6 +417,9 @@ export function Effects() {
         <mesh key={`f${i}`} ref={(el) => void (flashRefs.current[i] = el)} geometry={flashGeo} material={flashMats[i]} visible={false} />
       ))}
       <mesh ref={beamRef} geometry={beamGeo} material={beamMat} visible={false} />
+      <Sparks />
+      <Zaps />
+      <Orbs />
       <Pings />
     </group>
   );

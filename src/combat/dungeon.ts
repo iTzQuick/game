@@ -23,6 +23,24 @@ export interface Pillar {
 
 export type RoomKind = 'start' | 'combat' | 'boss';
 
+/**
+ * Che cosa c'è in una stanza di combattimento:
+ * - normale: le ondate di sempre;
+ * - campione: meno nemici, ma uno è un Campione (grosso, dorato, lascia un oggetto migliore);
+ * - prova: ripulirla entro il tempo dà un premio in più;
+ * - trappole: dal pavimento escono spine (fanno male anche ai nemici);
+ * - tesoro: niente nemici, un forziere al centro.
+ */
+export type RoomVariant = 'normale' | 'campione' | 'prova' | 'trappole' | 'tesoro';
+
+export const VARIANT_INFO: Record<RoomVariant, { name: string; hint: string; glyph: string }> = {
+  normale: { name: 'Stanza', hint: '', glyph: '⚔' },
+  campione: { name: 'Il Campione', hint: 'Un nemico dorato, molto più forte: lascia un oggetto migliore', glyph: '♛' },
+  prova: { name: 'Prova a tempo', hint: 'Ripulite la stanza prima che scada il tempo: premio in più', glyph: '⧗' },
+  trappole: { name: 'Sala delle spine', hint: 'Le spine escono dal pavimento: fanno male anche ai nemici', glyph: '⚠' },
+  tesoro: { name: 'Tesoro', hint: 'Nessun nemico: avvicinatevi al forziere', glyph: '✦' },
+};
+
 export interface DRoom {
   i: number;
   kind: RoomKind;
@@ -32,6 +50,8 @@ export interface DRoom {
   d: number;
   rect: Rect;
   pillars: Pillar[];
+  /** solo per le stanze di combattimento */
+  variant?: RoomVariant;
   /** x della porta sud (da dove si entra) e nord (da dove si esce). */
   doorSouthX: number | null;
   doorNorthX: number | null;
@@ -94,6 +114,8 @@ export function generateDungeon(seed: number, grado: number): Dungeon {
     });
   });
 
+  assignVariants(rooms, seed);
+
   for (let i = 0; i < rooms.length - 1; i++) {
     const a = rooms[i];
     const b = rooms[i + 1];
@@ -134,13 +156,39 @@ export function generateDungeon(seed: number, grado: number): Dungeon {
       const z = between(room.rect.z0 + 3 + r, room.rect.z1 - 3 - r);
       const nearDoor = doors.some(([dx, dz]) => Math.hypot(dx - x, dz - z) < 5);
       const nearPillar = room.pillars.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r + 3);
-      const nearCenter = room.kind === 'start' && Math.hypot(room.cx - x, room.cz - z) < 4;
+      const nearCenter = (room.kind === 'start' || room.variant === 'tesoro') && Math.hypot(room.cx - x, room.cz - z) < 4;
       if (nearDoor || nearPillar || nearCenter) continue;
       room.pillars.push({ x, z, r, h: between(2.2, 5) });
     }
   }
 
   return { seed, rooms, corridors };
+}
+
+/**
+ * Tipi delle stanze, da un seme a parte (così la forma della Frattura non cambia):
+ * la prima è sempre normale, al massimo un tesoro, mai due stanze speciali uguali di fila.
+ */
+function assignVariants(rooms: DRoom[], seed: number) {
+  const rand = rng((seed ^ 0x2f6b9e1d) >>> 0);
+  let treasure = false;
+  let prev: RoomVariant = 'normale';
+  rooms
+    .filter((r) => r.kind === 'combat')
+    .forEach((r, k) => {
+      let v: RoomVariant = 'normale';
+      if (k > 0) {
+        const roll = rand();
+        if (roll < 0.2 && !treasure) v = 'tesoro';
+        else if (roll < 0.42) v = 'campione';
+        else if (roll < 0.62) v = 'trappole';
+        else if (roll < 0.8) v = 'prova';
+        if (v !== 'normale' && v === prev) v = 'normale';
+      }
+      if (v === 'tesoro') treasure = true;
+      r.variant = v;
+      prev = v;
+    });
 }
 
 // --- Domande sulla geometria -------------------------------------------------------

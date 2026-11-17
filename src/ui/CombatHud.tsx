@@ -6,11 +6,12 @@ import { CLASSES, type ClassId } from '../game/constants';
 import { useGame } from '../game/store';
 import { abilityState } from '../combat/abilities';
 import { CLASS_STATS, DOWN_SECONDS, ENEMIES, MODS, REVIVE_SECONDS, isBoss } from '../combat/defs';
-import { combatRoomCount } from '../combat/dungeon';
+import { VARIANT_INFO, combatRoomCount } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
 import { press } from '../game/input';
 import { Icon } from './Icon';
+import { BoonStrip } from './BoonPanel';
 import { useProgress } from '../progress/store';
 import { classProgress } from '../progress/model';
 import { nomeNemico, secondiRimasti, testoObiettivo } from '../narrator/core';
@@ -70,6 +71,7 @@ export function CombatHud({ touch }: { touch: boolean }) {
               {!touch && <kbd>H</kbd>}
             </div>
           )}
+          <BoonStrip />
         </div>
       )}
       {!touch && cls && <AbilityBar cls={cls} />}
@@ -150,6 +152,7 @@ export function TopStatus() {
   return (
     <>
       {inRun && run && <RunLine />}
+      {inRun && run && <RoomBanner />}
       {inRun && <MissionLine />}
       {inRun && <BossBar />}
       {combo && (
@@ -177,6 +180,27 @@ function RunLine() {
           {MODS[m].name}
         </i>
       ))}
+    </div>
+  );
+}
+
+/** Stanza speciale in corso: il suo nome, cosa fare e (nella Prova) il tempo che resta. */
+function RoomBanner() {
+  const run = useGame((s) => s.room.run)!;
+  const d = combat.dungeon;
+  if (!d || run.fight < 0 || run.phase === 'complete') return null;
+  const r = d.rooms[run.fight];
+  const v = r?.variant;
+  if (!v || v === 'normale') return null;
+  const info = VARIANT_INFO[v];
+  const left = v === 'prova' && run.prova ? Math.ceil((run.prova - Date.now()) / 1000) : null;
+  return (
+    <div className={`room-banner v-${v}${left !== null && left <= 10 ? ' urgent' : ''}`}>
+      <b>
+        {info.glyph} {info.name}
+        {left !== null && (left > 0 ? ` · ${left} s` : ' · tempo scaduto')}
+      </b>
+      <small>{info.hint}</small>
     </div>
   );
 }

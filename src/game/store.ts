@@ -3,6 +3,7 @@
 // dentro useFrame, per non ridisegnare React 60 volte al secondo.
 
 import { create } from 'zustand';
+import type { BoonId } from '../combat/boons';
 import type { ClassId } from './constants';
 import type { Member, RunState } from '../net/roomLogic';
 import type { BuildingId } from '../progress/defs';
@@ -25,6 +26,10 @@ export interface Settings {
   touch: 'auto' | 'on' | 'off';
   /** Mira automatica sul nemico più vicino davanti (sul telefono è sempre attiva). */
   autoAim: boolean;
+  /** Volume dei suoni (0 = muto). */
+  sound: number;
+  /** Scossa della telecamera sui colpi forti. */
+  shake: boolean;
 }
 
 export interface Dialog {
@@ -99,6 +104,8 @@ interface GameStore {
   panel: Panel;
   /** Edificio scelto nel pannello della base. */
   building: string | null;
+  /** Poteri della Frattura da scegliere (dopo una stanza ripulita). */
+  boonOffer: BoonId[] | null;
 }
 
 export type Panel = 'personaggio' | 'zaino' | 'forgia' | 'base' | 'biblioteca' | 'trofei' | 'account' | 'missioni' | 'citta' | null;
@@ -117,6 +124,8 @@ function loadSettings(): Settings {
     showStats: false,
     touch: 'auto',
     autoAim: true,
+    sound: 0.7,
+    shake: true,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -177,6 +186,7 @@ export const useGame = create<GameStore>(() => ({
   combo: null,
   panel: null,
   building: null,
+  boonOffer: null,
 }));
 
 export const setGame = useGame.setState;
@@ -251,7 +261,7 @@ export function advanceDialog() {
 /** True se un menu o un dialogo blocca i controlli del personaggio. */
 export function controlsBlocked(): boolean {
   const s = getGame();
-  return s.classPicker || s.settingsOpen || s.dialog !== null || s.helpOpen || s.panel !== null;
+  return s.classPicker || s.settingsOpen || s.dialog !== null || s.helpOpen || s.panel !== null || s.boonOffer !== null;
 }
 
 export function displayName(id: string): string {

@@ -51,8 +51,10 @@ export type CombatMsg =
   | { t: 'combo'; name: string; ids: string[] }
   /** `m`: id della missione del giorno da giocare (solo con 'start') */
   | { t: 'runreq'; a: 'start' | 'leave' | 'abandon'; m?: string }
-  /** bottino deciso dall'host per un giocatore (`why`: missione compiuta) */
-  | { t: 'loot'; items: Item[]; frags: number; why?: string }
+  /** compagni guidati dal computer: una riga per compagno (vedi bots.ts) */
+  | { t: 'bots'; ts: number; b: (number | string)[][] }
+  /** bottino deciso dall'host per un giocatore (`why`: missione compiuta; `from`: forziere, Campione, Prova) */
+  | { t: 'loot'; items: Item[]; frags: number; why?: string; from?: string }
   /** un giocatore ha fatto qualcosa che la missione vieta (al host) */
   | { t: 'mfail'; k: 'pozione' }
   /** voto della compagnia (al host): indice dell'opzione */

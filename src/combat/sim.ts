@@ -48,12 +48,16 @@ export interface Enemy {
   atk: { k: AttackKind; x: number; z: number; r: number } | null;
   target: string | null;
   stunUntil: number;
+  /** barcolla dopo un colpo: per un attimo quasi non avanza */
+  staggerUntil: number;
   tauntBy: string | null;
   tauntUntil: number;
   markUntil: number;
   revealedUntil: number;
   veiled: boolean;
   pulled: boolean;
+  /** Campione: più grosso, più forte, lascia un oggetto migliore */
+  elite?: boolean;
   boss?: { nextNova: number; summoned: number; enraged: boolean };
 }
 
@@ -82,9 +86,21 @@ export interface Hit {
   x?: boolean;
   /** spinta [dx, dz] */
   kb?: [number, number];
+  /** barcollamento più lungo (ms), dal potere Tocco gelido */
+  sg?: number;
 }
 
 export const EXECUTE_THRESHOLD = 0.35;
+
+/** Il Campione: quanta vita, danni e velocità in più, e quanti nemici normali sostituisce. */
+export const ELITE = { hp: 3.5, dmg: 1.35, speed: 1.1, budget: 3 };
+const eliteDmg = (e: Enemy) => (e.elite ? ELITE.dmg : 1);
+
+/** Il Campione è uno dei nemici "grossi" del mondo (mai lo Sciame). */
+function championType(pool: EnemyType[]): EnemyType {
+  for (const t of ['bruto', 'annegato', 'riflesso', 'ombra'] as EnemyType[]) if (pool.includes(t)) return t;
+  return pool.find((t) => t !== 'sciame') ?? 'ombra';
+}
 const BOSS_NOVA_EVERY = 6500;
 const NOVA_COUNT = 12;
 
@@ -129,6 +145,7 @@ export class EnemySim {
       atk: null,
       target: null,
       stunUntil: 0,
+      staggerUntil: 0,
       tauntBy: null,
       tauntUntil: 0,
       markUntil: 0,
@@ -160,9 +177,21 @@ export class EnemySim {
       const boss = this.spawn(this.boss, room, r.cx, r.rect.z0 + 7, now);
       return [boss];
     }
-    const types = composeWave(6 + 2 * (players - 1) + (grado - 1) + room + wave, rand, this.mods, focus, this.pool);
-    const pts = spawnPoints(this.dungeon, room, types.length, rand);
-    return types.map((t, i) => this.spawn(t, room, pts[i][0], pts[i][1], now));
+    if (r.variant === 'tesoro') return [];
+    // nella stanza del Campione: meno nemici, più lui (solo nella prima ondata)
+    const champion = r.variant === 'campione' && wave === 0;
+    const budget = 6 + 2 * (players - 1) + (grado - 1) + room + wave - (champion ? ELITE.budget : 0);
+    const types = composeWave(Math.max(2, budget), rand, this.mods, focus, this.pool);
+    const pts = spawnPoints(this.dungeon, room, types.length + (champion ? 1 : 0), rand);
+    const out = types.map((t, i) => this.spawn(t, room, pts[i][0], pts[i][1], now));
+    if (champion) {
+      const p = pts[types.length];
+      const e = this.spawn(championType(this.pool), room, p[0], p[1], now);
+      e.elite = true;
+      e.maxHp = e.hp = Math.round(e.hp * ELITE.hp * (1 + 0.25 * (players - 1)));
+      out.push(e);
+    }
+    return out;
   }
 
   aliveIn(room: number): number {
@@ -189,6 +218,7 @@ export class EnemySim {
     if (e.veiled && now >= e.revealedUntil) f |= EF.veiled;
     if (e.boss?.enraged) f |= EF.enraged;
     if (e.pulled) f |= EF.pulled;
+    if (e.elite) f |= EF.elite;
     return f;
   }
 
@@ -209,9 +239,18 @@ export class EnemySim {
       e.tauntBy = from;
       e.tauntUntil = now + h.tn;
     }
+    const boss = isBoss(e.type);
     if (h.kb) {
-      e.vx += h.kb[0];
-      e.vz += h.kb[1];
+      // i boss e il Bruto quasi non si spostano
+      const k = boss ? 0.12 : e.elite ? 0.3 : e.type === 'bruto' ? 0.45 : 1;
+      e.vx += h.kb[0] * k;
+      e.vz += h.kb[1] * k;
+    }
+    // ogni colpo fa barcollare un attimo (meno i grossi, quasi niente i boss)
+    if (dmg > 0) {
+      const base = boss ? 40 : e.elite || e.type === 'bruto' ? 90 : 170;
+      const extra = h.sg ? Math.min(1500, h.sg) * (boss ? 0.2 : e.elite ? 0.5 : 1) : 0;
+      e.staggerUntil = Math.max(e.staggerUntil, now + Math.max(base, extra));
     }
     if (h.st && !isBoss(e.type)) {
       e.stunUntil = Math.max(e.stunUntil, now + h.st);
@@ -259,7 +298,7 @@ export class EnemySim {
     for (const e of [...this.enemies.values()]) {
       const def = ENEMIES[e.type];
       const stunned = now < e.stunUntil;
-      const speedMul = this.scale.speed * (e.boss?.enraged ? 1.35 : 1);
+      const speedMul = this.scale.speed * (e.boss?.enraged ? 1.35 : 1) * (e.elite ? ELITE.speed : 1);
       let wantX = 0;
       let wantZ = 0;
 
@@ -292,7 +331,7 @@ export class EnemySim {
               atk.k === 'nova'
                 ? Array.from({ length: NOVA_COUNT }, (_, i) => (i / NOVA_COUNT) * Math.PI * 2 + (now % 1000) / 1000)
                 : [this.aimAt(e, target)];
-            ev.push({ t: 'epj', id: e.id, x: e.x, z: e.z, dirs, spd: def.projSpeed ?? 10, dmg: Math.round(def.dmg * this.scale.dmg * (atk.k === 'nova' ? 0.55 : 1)) });
+            ev.push({ t: 'epj', id: e.id, x: e.x, z: e.z, dirs, spd: def.projSpeed ?? 10, dmg: Math.round(def.dmg * this.scale.dmg * eliteDmg(e) * (atk.k === 'nova' ? 0.55 : 1)) });
           }
           // l'Anguilla scatta in avanti lungo la linea del preavviso
           if (def.lunge && atk?.k === 'cone') {
@@ -360,7 +399,7 @@ export class EnemySim {
               rad,
               arc,
               d: Math.round(windupMs),
-              dmg: Math.round(def.dmg * this.scale.dmg),
+              dmg: Math.round(def.dmg * this.scale.dmg * eliteDmg(e)),
             });
           }
         }
@@ -381,7 +420,7 @@ export class EnemySim {
       }
 
       // movimento
-      const sp = stunned || e.ai !== 'chase' ? 0 : def.speed * speedMul;
+      const sp = stunned || e.ai !== 'chase' ? 0 : def.speed * speedMul * (now < e.staggerUntil ? 0.15 : 1);
       const a = 1 - Math.exp(-8 * dt);
       e.vx += (wantX * sp - e.vx) * a;
       e.vz += (wantZ * sp - e.vz) * a;

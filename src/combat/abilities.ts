@@ -8,9 +8,18 @@ import { CLASSES, type ClassId } from '../game/constants';
 import { abilityMove, type MoveStyle } from '../player/moves';
 import { getGame } from '../game/store';
 import { getRoom } from '../net/room';
-import { spawnFlash, spawnPuff, spawnRing, spawnSlash, addBeam } from '../fx/effects';
+import { spawnFlash, spawnPuff, spawnRing, spawnSlash, spawnSparks, spawnZap, addBeam } from '../fx/effects';
+import { BOON, boonLevel, orbState } from './boons';
+import { sfx } from '../audio/sfx';
+import { hitStop, shake } from './feel';
 import { emitCombat } from './bus';
-import { AB, CLASS_STATS, EF, ENEMIES, ULTRA_GAIN, ULTRA_LOCK, ULTRA_MAX } from './defs';
+import { AB, CLASS_STATS, EF, ENEMIES, ULTRA_GAIN, ULTRA_LOCK, ULTRA_MAX, isBoss } from './defs';
+
+import { COMBO_NAMES, VF, type AbilitySlot, type CombatMsg } from './protocol';
+import { combat, setHitFx, setKillFx, showCombo, type EnemyView } from './runtime';
+import type { Hit } from './sim';
+import { EXECUTE_THRESHOLD } from './sim';
+import type { PerkKey } from '../progress/defs';
 
 /** Quanto resta attiva ogni Ultra (secondi): durante non si ricarica. */
 const ULTRA_ACTIVE: Record<ClassId, number> = {
@@ -19,11 +28,6 @@ const ULTRA_ACTIVE: Record<ClassId, number> = {
   tessitore: AB.collasso.dur,
   custode: 1,
 };
-import { COMBO_NAMES, VF, type AbilitySlot, type CombatMsg } from './protocol';
-import { combat, showCombo, type EnemyView } from './runtime';
-import type { Hit } from './sim';
-import { EXECUTE_THRESHOLD } from './sim';
-import type { PerkKey } from '../progress/defs';
 
 // --- bonus di talenti e oggetti --------------------------------------------------------
 
@@ -103,6 +107,7 @@ function combo(key: keyof typeof COMBO_NAMES, partnerClass: ClassId) {
 /** Da chiamare a ogni frame. */
 export function tickAbilities(ctx: PlayerCtx) {
   const now = performance.now();
+  tickOrbs(now);
   const due = queue.filter((q) => q.at <= now);
   if (due.length) {
     queue = queue.filter((q) => q.at > now);
@@ -114,8 +119,11 @@ export function tickAbilities(ctx: PlayerCtx) {
     bastionPending = false;
     const raw = (AB.bastione.blastBase + AB.bastione.blastMul * m.bastionAbsorbed) * (1 + P('bastioneEsplosione'));
     const dmg = scale(raw, 'ability', ctx.cls, false).d;
-    hitArea(ctx.x, ctx.z, AB.bastione.blastRadius, { d: dmg, noCharge: true, raw: true });
+    hitArea(ctx.x, ctx.z, AB.bastione.blastRadius, { d: dmg, noCharge: true, raw: true, push: 14, weight: 2 });
     spawnFlash(ctx.x, ctx.z, '#ffd25a', AB.bastione.blastRadius, 0.5);
+    spawnSparks(ctx.x, 1, ctx.z, '#ffd25a', 40, 1.8);
+    shake(0.7);
+    hitStop(140);
     emitAb(ctx, 'F', { to: [ctx.x, ctx.z] }, true);
     m.bastionAbsorbed = 0;
   }
@@ -182,12 +190,75 @@ interface HitOpts {
   /** mostrato come critico */
   crit?: boolean;
   includeVeiled?: boolean;
+  /** spinta all'indietro (m/s), lontano da chi colpisce */
+  push?: number;
+  /** quanto "pesa" il colpo: pausa all'impatto e scossa (0 = niente, 1 = normale) */
+  weight?: number;
 }
 
-function hitEnemy(e: EnemyView, o: Omit<Hit, 'e'> & { crit?: boolean; noCharge?: boolean }) {
-  combat.queueHit({ e: e.id, d: o.d, st: o.st, tn: o.tn, mk: o.mk, x: o.x, kb: o.kb }, !o.noCharge);
-  if (o.d > 0) combat.number(e.x, 2.1, e.z, o.d, o.crit ? 'crit' : 'dmg');
+type HitArgs = Omit<Hit, 'e' | 'kb'> & { crit?: boolean; noCharge?: boolean; push?: number; weight?: number };
+
+function hitEnemy(e: EnemyView, o: HitArgs) {
+  const p = combat.selfPos;
+  let dx = e.x - p.x;
+  let dz = e.z - p.z;
+  const len = Math.hypot(dx, dz) || 1;
+  dx /= len;
+  dz /= len;
+  const kb: [number, number] | undefined = o.push ? [dx * o.push, dz * o.push] : undefined;
+  // Tocco gelido: i nemici colpiti restano quasi fermi più a lungo
+  const gelo = boonLevel('gelo');
+  const sg = gelo && o.d > 0 ? BOON.gelo.base + BOON.gelo.perLevel * gelo : undefined;
+  combat.queueHit({ e: e.id, d: o.d, st: o.st, tn: o.tn, mk: o.mk, x: o.x, kb, sg }, !o.noCharge);
+  if (o.d > 0) {
+    lastHitByMe.set(e.id, performance.now());
+    combat.number(e.x, 2.1, e.z, o.d, o.crit ? 'crit' : 'dmg');
+    impact(e, o.weight ?? 1, !!o.crit, [dx, dz], gelo > 0);
+    // Sete d'ombra: un po' di vita per ogni colpo
+    const sete = boonLevel('sete');
+    if (sete) combat.healMe(o.d * BOON.sete.heal * sete, true);
+  }
 }
+
+/** Ultimo colpo nostro su ogni nemico (per i poteri che scattano quando muore). */
+const lastHitByMe = new Map<number, number>();
+
+/** Il colpo si sente: scintille, pausa all'impatto, scossa e suono. */
+function impact(e: EnemyView, weight: number, crit: boolean, dir: [number, number], cold = false) {
+  if (weight <= 0) return;
+  const w = weight * (crit ? 1.4 : 1);
+  const boss = isBoss(e.type);
+  const c = cold ? '#a8e6ff' : crit ? '#fff2b0' : '#ffffff';
+  spawnSparks(e.x - dir[0] * 0.3, boss ? 2 : 1.2, e.z - dir[1] * 0.3, c, Math.round(4 + 5 * w), 0.8 + 0.4 * w, dir);
+  // i colpi leggeri e continui (Lune d'ombra) non fermano il gioco a ogni tocco
+  if (w >= 0.5) {
+    hitStop(35 + 40 * w);
+    shake(0.07 + 0.1 * w);
+  }
+  sfx.hit(w, crit);
+}
+
+// i dardi (Tessitore, Custode) colpiscono nel ciclo del runtime: stesso effetto, più leggero
+setHitFx((e, dmg, crit, dir) => {
+  lastHitByMe.set(e.id, performance.now());
+  impact(e, 0.5, crit, dir);
+  const sete = boonLevel('sete');
+  if (sete) combat.healMe(dmg * BOON.sete.heal * sete, true);
+});
+
+// Frattura a catena: chi abbiamo colpito da poco esplode quando cade (e può far cadere altri)
+setKillFx((id, x, z) => {
+  const t = lastHitByMe.get(id);
+  lastHitByMe.delete(id);
+  const l = boonLevel('catena');
+  if (!l || t === undefined || performance.now() - t > 2500) return;
+  later(140, () => {
+    const d = BOON.catena.base + BOON.catena.perLevel * l;
+    spawnFlash(x, z, '#c9a6ff', BOON.catena.radius, 0.35);
+    spawnSparks(x, 1, z, '#c9a6ff', 18, 1.4);
+    hitArea(x, z, BOON.catena.radius, { d, push: 7, weight: 1 });
+  });
+});
 
 function withBonus(o: HitOpts): HitOpts {
   if (o.raw || o.d <= 0) return o;
@@ -244,7 +315,7 @@ function consumeVeil(): boolean {
 }
 
 /** Danno di un colpo della Lama (o di chiunque) con le regole delle combo. */
-function strike(ctx: PlayerCtx, e: EnemyView, base: number, fromVeil: boolean) {
+function strike(ctx: PlayerCtx, e: EnemyView, base: number, fromVeil: boolean, push = 0, weight = 1) {
   const taunted = ctx.cls === 'lama' && (e.flags & EF.taunt) !== 0;
   const s = scale(base, 'basic', ctx.cls, !taunted);
   let d = s.d * nextMul;
@@ -267,7 +338,7 @@ function strike(ctx: PlayerCtx, e: EnemyView, base: number, fromVeil: boolean) {
     d *= AB.velo.mul + P('veloDanno');
     crit = true;
   }
-  hitEnemy(e, { d: Math.round(d), crit, x: execute || undefined });
+  hitEnemy(e, { d: Math.round(d), crit, x: execute || undefined, push, weight });
 }
 
 // --- attacco base -----------------------------------------------------------------
@@ -283,6 +354,7 @@ export function basicAttack(ctx: PlayerCtx, comboN: number) {
   const fromVeil = consumeVeil();
 
   if (ranged) {
+    sfx.shoot();
     const mul = nextMul * (fromVeil ? AB.velo.mul + P('veloDanno') : 1);
     const sc = scale(stats.basic[0], 'basic', ctx.cls);
     combat.bolts.push({
@@ -309,11 +381,115 @@ export function basicAttack(ctx: PlayerCtx, comboN: number) {
     spawnSlash([ctx.x, ctx.y, ctx.z], yaw, color, comboN);
     const dmg = stats.basic[Math.min(comboN, stats.basic.length) - 1];
     const hits = coneTargets(ctx.x, ctx.z, yaw, stats.reach, stats.arc);
-    for (const e of hits) strike(ctx, e, dmg, fromVeil);
+    // il terzo colpo della combo è il più pesante: spinge via e si sente di più
+    const heavy = comboN >= 3;
+    for (const e of hits) strike(ctx, e, dmg, fromVeil, heavy ? 9 : 3, heavy ? 1.6 : 0.8);
+    sfx.swing(comboN);
   }
   nextMul = 1;
   nextCrit = false;
   getRoom()?.emit({ t: 'act', a: 'attack', n: comboN, p: [ctx.x, ctx.y, ctx.z], r: yaw });
+
+  // poteri della Frattura legati agli attacchi
+  attackCount++;
+  const sc = boonLevel('scintilla');
+  if (sc && attackCount % BOON.scintilla.every === 0) later(90, () => zap(sc));
+  const onda = boonLevel('onda');
+  if (onda && comboN >= 3) later(110, () => wave(yaw, onda, color));
+}
+
+let attackCount = 0;
+
+function nearestEnemy(x: number, z: number, range: number, skip?: number): EnemyView | null {
+  let best: EnemyView | null = null;
+  let bd = range;
+  for (const e of combat.enemies.values()) {
+    if (!combat.targetable(e) || e.id === skip) continue;
+    const d = Math.hypot(e.x - x, e.z - z);
+    if (d < bd) {
+      bd = d;
+      best = e;
+    }
+  }
+  return best;
+}
+
+/** Scintilla del Crocevia: un fulmine sul nemico più vicino (al livello 3 salta su un secondo). */
+function zap(l: number) {
+  const p = combat.selfPos;
+  const first = nearestEnemy(p.x, p.z, BOON.scintilla.range);
+  if (!first) return;
+  const base = BOON.scintilla.base + BOON.scintilla.perLevel * l;
+  const s1 = scale(base, 'ability', currentClass);
+  spawnZap([p.x, p.y + 1.8, p.z], [first.x, 1.2, first.z], '#9fe8ff');
+  hitEnemy(first, { d: s1.d, crit: s1.crit, weight: 0.9, push: 3 });
+  if (l >= 3) {
+    const second = nearestEnemy(first.x, first.z, 7, first.id);
+    if (second) {
+      const s2 = scale(base * 0.6, 'ability', currentClass);
+      spawnZap([first.x, 1.2, first.z], [second.x, 1.2, second.z], '#9fe8ff');
+      hitEnemy(second, { d: s2.d, crit: s2.crit, weight: 0.6 });
+    }
+  }
+}
+
+/** Onda del terzo colpo: un'onda che attraversa i nemici in linea. */
+function wave(yaw: number, l: number, color: string) {
+  const p = combat.selfPos;
+  const sc = scale(BOON.onda.base + BOON.onda.perLevel * l, 'ability', currentClass);
+  combat.bolts.push({
+    x: p.x + Math.sin(yaw) * 0.8,
+    z: p.z + Math.cos(yaw) * 0.8,
+    y: p.y + 1,
+    dx: Math.sin(yaw),
+    dz: Math.cos(yaw),
+    spd: BOON.onda.speed,
+    dmg: sc.d,
+    born: performance.now(),
+    life: BOON.onda.range / BOON.onda.speed,
+    mine: true,
+    color,
+    kind: 'onda',
+    bounces: 0,
+    hit: new Set(),
+    alive: true,
+    portalCd: 0,
+    mul: 1,
+    crit: sc.crit,
+  });
+}
+
+/** Passo fantasma: dove si parte con la schivata esplode un'ombra. */
+export function dodgeBoon(x: number, z: number) {
+  const l = boonLevel('passo');
+  if (!l) return;
+  spawnFlash(x, z, '#7a5cff', BOON.passo.radius, 0.3);
+  hitArea(x, z, BOON.passo.radius, { d: BOON.passo.base + BOON.passo.perLevel * l, push: 6, weight: 0.8 });
+}
+
+/** Lune d'ombra: sfere che girano attorno e colpiscono chi toccano. */
+const orbHits = new Map<number, number>();
+function tickOrbs(now: number) {
+  const l = boonLevel('lune');
+  const n = l && combat.alive ? l + 1 : 0;
+  orbState.n = n;
+  if (!n) return;
+  const p = combat.selfPos;
+  const t = (now / 1000) * BOON.lune.speed;
+  for (let i = 0; i < n; i++) {
+    const a = t + (i / n) * Math.PI * 2;
+    const o = orbState.pos[i];
+    o.x = p.x + Math.sin(a) * BOON.lune.orbit;
+    o.y = p.y + 1.1;
+    o.z = p.z + Math.cos(a) * BOON.lune.orbit;
+    for (const e of combat.enemies.values()) {
+      if (!combat.targetable(e) || (orbHits.get(e.id) ?? 0) > now) continue;
+      if (Math.hypot(e.x - o.x, e.z - o.z) > BOON.lune.hitRadius + ENEMIES[e.type].radius) continue;
+      orbHits.set(e.id, now + BOON.lune.every);
+      const sc = scale(BOON.lune.dmg + BOON.lune.perLevel * l, 'ability', currentClass);
+      hitEnemy(e, { d: sc.d, crit: sc.crit, weight: 0.3, push: 2 });
+    }
+  }
 }
 
 // --- abilità ----------------------------------------------------------------------
@@ -382,6 +558,8 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
   } else m.cd[slot] = now + cooldownMs(ctx.cls, slot);
   // ogni abilità ha il suo movimento del corpo
   ctx.attackAnim(1, abilityMove(ctx.cls, slot), slot);
+  sfx.cast(slot === 'F');
+  if (slot === 'F') shake(0.25);
   const color = colorOf(ctx.cls);
   const key = `${ctx.cls}:${slot}` as const;
 
@@ -391,7 +569,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
       const { yaw } = aimYaw(ctx, AB.scudo.range + 2);
       ctx.setYaw(yaw);
       spawnSlash([ctx.x, ctx.y, ctx.z], yaw, '#9fc4ff', 2);
-      hitCone(ctx.x, ctx.z, yaw, AB.scudo.range, AB.scudo.arc, { d: AB.scudo.dmg, st: AB.scudo.stun + P('scudoStordimento') });
+      hitCone(ctx.x, ctx.z, yaw, AB.scudo.range, AB.scudo.arc, { d: AB.scudo.dmg, st: AB.scudo.stun + P('scudoStordimento'), push: 11, weight: 1.6 });
       // Tessitore + Guardiano: la Trappola ammassa, il Colpo di scudo li stordisce tutti
       for (const z of combat.zones.values()) {
         if (z.kind === 'trappola' && Math.hypot(z.x - ctx.x, z.z - ctx.z) <= z.r + 3) {
@@ -459,7 +637,7 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
         later(i * AB.vortice.every * 1000, () => {
           const p = combat.selfPos;
           for (let k = 0; k < 3; k++) spawnSlash([p.x, p.y, p.z], (k / 3) * Math.PI * 2 + i, color, 2);
-          hitArea(p.x, p.z, AB.vortice.radius, { d: AB.vortice.dmg });
+          hitArea(p.x, p.z, AB.vortice.radius, { d: AB.vortice.dmg, push: 2.5, weight: 0.5 });
         });
       }
       emitAb(ctx, 'E');

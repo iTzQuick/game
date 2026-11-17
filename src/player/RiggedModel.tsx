@@ -11,6 +11,7 @@ import type { ClassId } from '../game/constants';
 import type { EnemyType } from '../combat/defs';
 import { MOVE_DURATION, bodyOffset, dodgeOffset, type MoveStyle } from './moves';
 import type { AbilitySlot } from '../combat/protocol';
+import { animScale } from '../combat/feel';
 
 export type Move = 'idle' | 'run' | 'down';
 
@@ -291,7 +292,13 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     const runScale = Math.max(0.6, Math.min(1.6, ctrl.speed / (def.runSpeed ?? 6)));
     if (actions.run) actions.run.timeScale = runScale;
     if (actions.runLower) actions.runLower.timeScale = runScale;
-    mixer.update(dt);
+    // pausa all'impatto: le animazioni quasi si fermano, e l'attacco dura quel tanto di più
+    const slow = animScale(now);
+    if (slow < 1 && attacking) {
+      st.attackUntil += dt * 1000 * (1 - slow);
+      st.attackStart += dt * 1000 * (1 - slow);
+    }
+    mixer.update(dt * slow);
 
     if (roll.current) {
       roll.current.visible = ctrl.visible;

@@ -26,6 +26,11 @@ import type { Hit } from './sim';
 import { emptyMods, type Mods } from '../progress/model';
 import { POTION_HEAL } from '../progress/defs';
 import { CITTA, OSSIGENO, colonneBolle, inColonna, passoOssigeno, type Colonna } from '../citta/core';
+import { sfx } from '../audio/sfx';
+import { shake } from './feel';
+
+/** Quanto resta visibile un nemico sconfitto (caduta e dissolvenza). */
+export const DYING_MS = 900;
 
 export interface EnemyView {
   id: number;
@@ -85,7 +90,8 @@ export interface PBolt {
   life: number;
   mine: boolean;
   color: string;
-  kind: 'basic' | 'dardo';
+  /** onda: il potere "Onda del terzo colpo", attraversa i nemici */
+  kind: 'basic' | 'dardo' | 'onda';
   bounces: number;
   hit: Set<number>;
   alive: boolean;
@@ -177,6 +183,8 @@ class CombatRuntime {
   telegraphs: Telegraph[] = [];
   eprojs: EProj[] = [];
   bolts: PBolt[] = [];
+  /** nemici appena sconfitti: restano visibili per l'animazione della caduta */
+  dying = new Map<number, { e: EnemyView; t0: number }>();
   zones = new Map<string, CZone>();
   nums: DmgNum[] = [];
   me: MyVitals = freshVitals(100);
@@ -227,6 +235,7 @@ class CombatRuntime {
     this.eprojs = [];
     this.bolts = this.bolts.filter((b) => !b.alive);
     this.zones.clear();
+    this.dying.clear();
   }
 
   flags(now: number): number {
@@ -277,7 +286,14 @@ class CombatRuntime {
     m.lastHurt = now;
     this.addUltra(raw * ULTRA_GAIN.taken);
     this.number(this.selfPos.x, this.selfPos.y + 2.2, this.selfPos.z, raw, 'me');
+    // il colpo si sente: scossa e tonfo, più forti se fa male
+    const frac = dmg / Math.max(1, m.maxHp);
+    if (dmg > 0) {
+      shake(Math.min(0.6, 0.18 + frac * 2.2));
+      sfx.hurt(frac);
+    }
     if (m.hp <= 0) {
+      sfx.down();
       m.hp = 0;
       m.downAt = now;
       m.revive = 0;
@@ -286,12 +302,13 @@ class CombatRuntime {
     }
   }
 
-  healMe(amt: number) {
+  /** `quiet`: niente numero verde (le piccole cure continue, come Sete d'ombra). */
+  healMe(amt: number, quiet = false) {
     const m = this.me;
     if (!this.alive || this.noHeals() || amt <= 0) return;
     const before = m.hp;
     m.hp = Math.min(m.maxHp, m.hp + amt);
-    if (m.hp > before) this.number(this.selfPos.x, this.selfPos.y + 2.2, this.selfPos.z, m.hp - before, 'heal');
+    if (m.hp > before && !quiet) this.number(this.selfPos.x, this.selfPos.y + 2.2, this.selfPos.z, m.hp - before, 'heal');
   }
 
   /** Pozione del Giardino: cura metà della vita. */
@@ -396,6 +413,8 @@ class CombatRuntime {
         {
           const e = this.enemies.get(msg.id);
           if (e) e.charging = now + msg.d;
+          // un nemico vicino prepara un colpo: un piccolo avviso sonoro
+          if (Math.hypot(msg.x - this.selfPos.x, msg.z - this.selfPos.z) < 9) sfx.warn();
         }
         break;
       case 'ecancel':
@@ -422,11 +441,16 @@ class CombatRuntime {
           });
         }
         break;
-      case 'edie':
+      case 'edie': {
+        // resta a terra un attimo (cade e svanisce) invece di sparire di colpo
+        const v = this.enemies.get(msg.id);
+        if (v?.ready) this.dying.set(msg.id, { e: v, t0: now });
         this.enemies.delete(msg.id);
         this.telegraphs = this.telegraphs.filter((t) => t.id !== msg.id || t.done);
-        deathFx?.(msg.x, msg.z, msg.type);
+        deathFx?.(v?.ready ? v.x : msg.x, v?.ready ? v.z : msg.z, msg.type);
+        killFx?.(msg.id, v?.ready ? v.x : msg.x, v?.ready ? v.z : msg.z);
         break;
+      }
       case 'zone':
         this.zones.set(msg.z.id, { ...msg.z, born: now, until: now + msg.z.dur });
         break;
@@ -513,6 +537,7 @@ class CombatRuntime {
     const m = this.me;
     const renderTime = now - NET.interpDelayMs;
 
+    for (const [id, d] of this.dying) if (now - d.t0 > DYING_MS) this.dying.delete(id);
     // posizioni dei nemici come le vediamo
     for (const [id, e] of this.enemies) {
       if (now - e.lastSeen > 1500) {
@@ -532,6 +557,8 @@ class CombatRuntime {
     for (const t of this.telegraphs) {
       if (t.done || now < t.t1) continue;
       t.done = true;
+      // id 0: le spine della Sala delle spine (non un nemico)
+      if (t.id === 0) trapFx?.(t.x, t.z, t.rad);
       if (!ctx.inRun || !this.alive || (t.k !== 'cone' && t.k !== 'circle')) continue;
       const dx = ctx.x - t.x;
       const dz = ctx.z - t.z;
@@ -630,11 +657,14 @@ class CombatRuntime {
         b.hit.add(e.id);
         if (b.mine) {
           const dmg = b.dmg * b.mul;
-          this.queueHit({ e: e.id, d: dmg });
+          this.queueHit({ e: e.id, d: dmg, kb: [b.dx * 2.5, b.dz * 2.5] });
           this.number(e.x, 2, e.z, dmg, b.crit ? 'crit' : 'dmg');
+          hitFx?.(e, dmg, b.crit, [b.dx, b.dz]);
           b.mul = 1;
           b.crit = false;
         }
+        // l'onda attraversa i nemici
+        if (b.kind === 'onda') continue;
         if (b.kind === 'dardo' && b.bounces > 0) {
           b.bounces--;
           b.dmg *= AB.dardo.falloff;
@@ -716,6 +746,21 @@ class CombatRuntime {
 export const combat = new CombatRuntime();
 
 let deathFx: ((x: number, z: number, type: EnemyType) => void) | null = null;
+let hitFx: ((e: EnemyView, dmg: number, crit: boolean, dir: [number, number]) => void) | null = null;
+let killFx: ((id: number, x: number, z: number) => void) | null = null;
+let trapFx: ((x: number, z: number, r: number) => void) | null = null;
+/** Le spine escono dal pavimento (lo imposta view.tsx). */
+export function setTrapFx(fn: typeof trapFx) {
+  trapFx = fn;
+}
+/** Un nemico è caduto (per i poteri come Frattura a catena; lo imposta abilities.ts). */
+export function setKillFx(fn: typeof killFx) {
+  killFx = fn;
+}
+/** Effetto dei nostri dardi a segno (lo imposta abilities.ts). */
+export function setHitFx(fn: typeof hitFx) {
+  hitFx = fn;
+}
 export function setDeathFx(fn: typeof deathFx) {
   deathFx = fn;
 }

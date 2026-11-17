@@ -6,6 +6,7 @@ import { PerformanceMonitor } from '@react-three/drei';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Effects } from '../fx/effects';
+import { addBoon, myBoons } from '../combat/boons';
 import { LocalPlayer, localDebug } from '../player/LocalPlayer';
 import { RemotePlayers } from '../player/RemotePlayers';
 import { Hud } from '../ui/Hud';
@@ -28,7 +29,7 @@ import { groupKeeper } from '../progress/group';
 import { initRewards } from '../progress/rewards';
 import { getProgress, mutate } from '../progress/store';
 
-if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press, groupKeeper, getProgress, mutate });
+if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press, groupKeeper, getProgress, mutate, myBoons, addBoon });
 
 export function Game() {
   const quality = useGame((s) => s.settings.quality);
