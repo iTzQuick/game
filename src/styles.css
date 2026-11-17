@@ -151,6 +151,7 @@ kbd {
 }
 .field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   margin-bottom: 14px;
 }
@@ -160,6 +161,8 @@ kbd {
 }
 .menu-actions {
   display: grid;
+  /* la colonna non deve allargarsi per la larghezza naturale della casella del codice */
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 .menu-actions > button.primary {
@@ -169,9 +172,18 @@ kbd {
 .join-row {
   display: flex;
   gap: 8px;
+  min-width: 0;
+}
+.join-row > button {
+  flex: none;
+}
+.field input {
+  width: 100%;
+  min-width: 0;
 }
 .code-input {
-  flex: 1;
+  flex: 1 1 0;
+  width: 0;
   min-width: 0;
   text-transform: uppercase;
   letter-spacing: 0.3em;
