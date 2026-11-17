@@ -77,6 +77,8 @@ function EnemyMesh({ id }: { id: number }) {
   const [modelReady, setModelReady] = useState(false);
   const ctrl = useMemo(newCtrl, []);
   const wasCharging = useRef(false);
+  /** per i modelli senza scheletro (lo Sciame): segue il movimento disegnato qui */
+  const modelWrap = useRef<THREE.Group>(null);
 
   const mats = useMemo(() => {
     const c = ENEMY_COLORS[type];
@@ -121,6 +123,15 @@ function EnemyMesh({ id }: { id: number }) {
     const flash = now - e.flash < 110;
     if (modelDef) {
       b.visible = !modelReady;
+      if (modelDef.rigid && modelWrap.current) {
+        // nessuno scheletro: ondeggia, si inclina in curva e si getta in avanti quando attacca
+        const w = modelWrap.current;
+        w.position.copy(b.position);
+        w.position.y -= 0.35;
+        w.rotation.set(b.rotation.x, 0, Math.sin(t * 3 + id) * 0.18);
+        w.scale.copy(b.scale);
+      }
+      ctrl.opacity = type === 'velato' && e.flags & EF.veiled ? 0.13 + Math.sin(t * 3 + id) * 0.04 : 1;
       ctrl.move = speed > 0.4 ? 'run' : 'idle';
       ctrl.speed = speed;
       ctrl.flash = flash ? 1 : 0;
@@ -152,7 +163,11 @@ function EnemyMesh({ id }: { id: number }) {
   const headY = type === 'sciame' ? 0.9 : 1.6 * s;
   return (
     <group ref={root} visible={false}>
-      {modelDef && <ModelOr def={modelDef} ctrl={ctrl} onReady={setModelReady} />}
+      {modelDef && (
+        <group ref={modelWrap}>
+          <ModelOr def={modelDef} ctrl={ctrl} onReady={setModelReady} />
+        </group>
+      )}
       <group ref={body}>
         <EnemyBody type={type} mats={mats} s={s} />
       </group>

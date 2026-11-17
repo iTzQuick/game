@@ -8,6 +8,8 @@
 //   node scripts/models/prepare.mjs out.glb base.glb:idle [run.glb:run ...] [--texture 1024]
 //
 // Il file base dà mesh, materiali e scheletro; il suo primo clip prende il nome indicato.
+// Un clip si può ritagliare indicando inizio e fine in secondi: attack.glb:attack@0.7-1.5
+// (scripts/models/strike.mjs dice quando arriva il colpo).
 
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
@@ -36,12 +38,38 @@ const io = new NodeIO()
   .registerExtensions(ALL_EXTENSIONS)
   .registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 
+/** "file.glb:nome@0.7-1.5" → [file, nome, [0.7, 1.5] | null] */
 const split = (spec) => {
   const i = spec.lastIndexOf(':');
-  return i > 1 ? [spec.slice(0, i), spec.slice(i + 1)] : [spec, null];
+  if (i <= 1) return [spec, null, null];
+  const [name, range] = spec.slice(i + 1).split('@');
+  const trim = range ? range.split('-').map(Number) : null;
+  return [spec.slice(0, i), name, trim];
 };
 
-const [basePath, baseClip] = split(baseSpec);
+/** Tiene solo i fotogrammi tra from e to e li sposta a partire da 0. */
+function trimArrays(input, output, from, to) {
+  const n = input.length;
+  const size = output.length / n;
+  const keep = [];
+  for (let k = 0; k < n; k++) if (input[k] >= from - 1e-4 && input[k] <= to + 1e-4) keep.push(k);
+  if (!keep.length) {
+    // nessun fotogramma nella finestra: il valore più vicino, fermo
+    let best = 0;
+    for (let k = 1; k < n; k++) if (Math.abs(input[k] - from) < Math.abs(input[best] - from)) best = k;
+    keep.push(best);
+  }
+  const t = new Float32Array(keep.length);
+  const v = new output.constructor(keep.length * size);
+  keep.forEach((k, j) => {
+    t[j] = Math.max(0, input[k] - from);
+    for (let c = 0; c < size; c++) v[j * size + c] = output[k * size + c];
+  });
+  return [t, v];
+}
+
+const [basePath, baseClip, baseTrim] = split(baseSpec);
+if (baseTrim) console.warn('il ritaglio non si applica al clip del file base');
 const doc = await io.read(basePath);
 const root = doc.getRoot();
 const buffer = root.listBuffers()[0] ?? doc.createBuffer();
@@ -53,7 +81,7 @@ for (const a of anims.slice(1)) a.dispose(); // un clip per file: teniamo solo i
 const nodesByName = new Map(root.listNodes().map((n) => [n.getName(), n]));
 
 for (const spec of extra) {
-  const [path, clipName] = split(spec);
+  const [path, clipName, trim] = split(spec);
   const src = await io.read(path);
   const anim = src.getRoot().listAnimations()[0];
   if (!anim) {
@@ -67,22 +95,19 @@ for (const spec of extra) {
     const node = target && nodesByName.get(target.getName());
     if (!node) continue;
     const s = ch.getSampler();
-    const cloneAcc = (acc) =>
-      doc
-        .createAccessor()
-        .setType(acc.getType())
-        .setArray(acc.getArray().slice())
-        .setNormalized(acc.getNormalized())
-        .setBuffer(buffer);
+    let input = s.getInput().getArray().slice();
+    let output = s.getOutput().getArray().slice();
+    if (trim) [input, output] = trimArrays(input, output, trim[0], trim[1]);
+    const acc = (array, like) => doc.createAccessor().setType(like.getType()).setArray(array).setNormalized(like.getNormalized()).setBuffer(buffer);
     const sampler = doc
       .createAnimationSampler()
-      .setInput(cloneAcc(s.getInput()))
-      .setOutput(cloneAcc(s.getOutput()))
+      .setInput(acc(input, s.getInput()))
+      .setOutput(acc(output, s.getOutput()))
       .setInterpolation(s.getInterpolation());
     copy.addSampler(sampler).addChannel(doc.createAnimationChannel().setTargetNode(node).setTargetPath(ch.getTargetPath()).setSampler(sampler));
     linked++;
   }
-  console.log(`${path} → clip "${copy.getName()}" (${linked} canali collegati)`);
+  console.log(`${path} → clip "${copy.getName()}" (${linked} canali collegati${trim ? `, ritagliato ${trim[0]}–${trim[1]} s` : ''})`);
 }
 
 await doc.transform(
