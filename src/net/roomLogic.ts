@@ -8,7 +8,24 @@ import type { ClassId } from '../game/constants';
 import type { ModId } from '../combat/defs';
 import type { BuildingId } from '../progress/defs';
 import type { BuildingState, GroupData } from '../progress/model';
-import type { StoryState } from '../story/core';
+import type { Indizio, NemicoMissione, Narrazione, Obiettivo } from '../narrator/core';
+
+/** Missione del giorno in corso nella Frattura: la tiene aggiornata l'host. */
+export interface MissioneInCorso {
+  id: string;
+  titolo: string;
+  obiettivo: Obiettivo;
+  /** nemico che compare più spesso */
+  nemico: NemicoMissione | null;
+  /** nemici giusti sconfitti (obiettivo "sconfiggi") */
+  conta: number;
+  /** la regola è stata infranta (qualcuno è caduto, ha bevuto…) */
+  fallita: boolean;
+  /** quando è iniziata la Frattura (Date.now dell'host), per l'obiettivo "veloce" */
+  inizio: number;
+  /** a Frattura richiusa */
+  esito?: 'compiuta' | 'fallita';
+}
 
 export interface Member {
   id: string;
@@ -48,8 +65,8 @@ export interface RunState {
   wave: number;
   /** Sale a ogni sconfitta di gruppo: tutti tornano al checkpoint. */
   wipes: number;
-  /** Mondo della Frattura (per ora solo la Città Sommersa); assente = la Frattura del Crocevia. */
-  world?: string;
+  /** Missione del giorno, se la Frattura è stata aperta per una missione. */
+  missione?: MissioneInCorso | null;
 }
 
 export interface RoomState {
@@ -68,10 +85,16 @@ export interface RoomState {
   base?: Partial<Record<BuildingId, BuildingState>>;
   /** Imprese del gruppo (sala dei trofei, biblioteca). */
   gstats?: GroupData['stats'];
-  /** Missioni del gruppo (tappa 6). */
-  storia?: StoryState | null;
-  /** Ultime righe del diario del gruppo: le usa il narratore. */
-  diario?: string[];
+  /** Missioni e battute del giorno (narratore o riserva). */
+  narrazione?: Narrazione | null;
+  /** Missioni del giorno già compiute (id). */
+  fatte?: string[];
+  /** Indizi della Biblioteca scritti dal narratore. */
+  indizi?: Indizio[];
+  /** Ultime righe del diario della compagnia. */
+  diario?: GroupData['diario'];
+  /** Da dove vengono le missioni di oggi, in parole semplici (lo scrive l'host). */
+  statoNarratore?: string;
 }
 
 export const emptyRoomState = (): RoomState => ({ v: 0, classes: {}, run: null, grado: 1, best: 0 });

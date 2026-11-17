@@ -11,7 +11,7 @@ const handlers = new Set<Handler>();
 
 const COMBAT_TYPES = new Set([
   'en', 'ea', 'epj', 'ecancel', 'edie', 'hit', 'zone', 'zlit', 'ab', 'heal', 'bless', 'alba', 'combo', 'runreq',
-  'loot', 'contrib', 'contribok', 'mdone',
+  'loot', 'contrib', 'contribok', 'mfail',
 ]);
 
 export function isCombatMsg(m: { t: string }): m is CombatMsg {

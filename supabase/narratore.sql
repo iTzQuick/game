@@ -1,46 +1,30 @@
--- Le Fratture: il narratore (tappa 6).
--- Da eseguire UNA volta nel SQL Editor di Supabase (si può rieseguire senza danni),
--- dopo schema.sql.
+-- Le Fratture: memoria del narratore (tappa 6).
+-- Da eseguire UNA volta nel SQL Editor di Supabase (si può rieseguire senza danni).
 --
---   narratore_cache : le missioni giornaliere già scritte da Claude (una volta
---                     per compagnia al giorno, poi si rileggono da qui)
---   narratore_uso   : quante richieste ha fatto ognuno oggi (limiti di spesa)
---
--- Le usa solo la funzione `narratore` con la chiave di servizio: nessuna
--- regola di accesso per i giocatori, quindi dal gioco non si leggono né si
--- scrivono.
+-- Una riga per compagnia e per lavoro: "giorno-AAAA-MM-GG" (missioni e battute
+-- del giorno) oppure "indizio-N" (indizio della Biblioteca per il record N).
+-- La legge e la scrive solo la funzione `narratore` (chiave di servizio):
+-- nessuna regola di accesso per gli account, quindi dal gioco non si tocca.
 
-create table if not exists public.narratore_cache (
-  chiave text primary key,
-  data jsonb not null,
-  created_at timestamptz not null default now()
+-- Pulizia: tabelle e funzione di una versione precedente del narratore (se ci sono).
+-- Contenevano solo missioni in cache e contatori, nessun dato dei giocatori.
+drop function if exists public.narratore_conta (date, text, integer);
+drop table if exists public.narratore_cache;
+drop table if exists public.narratore_uso;
+
+create table if not exists public.narratore (
+  gruppo text not null,
+  chiave text not null,
+  stato text not null default 'in_corso' check (stato in ('in_corso', 'pronto', 'errore')),
+  dati jsonb,
+  tentativi int not null default 1,
+  creato timestamptz not null default now(),
+  aggiornato timestamptz not null default now(),
+  primary key (gruppo, chiave),
+  constraint narratore_size check (pg_column_size(dati) < 60000)
 );
 
-create table if not exists public.narratore_uso (
-  giorno date not null,
-  chi text not null,
-  n integer not null default 0,
-  primary key (giorno, chi)
-);
+create index if not exists narratore_aggiornato on public.narratore (aggiornato);
 
-alter table public.narratore_cache enable row level security;
-alter table public.narratore_uso enable row level security;
-
--- Conta una richiesta. Restituisce true se si è ancora sotto il limite del giorno.
-create or replace function public.narratore_conta (g date, c text, lim integer)
-returns boolean
-language sql
-security definer
-set search_path = public
-as $$
-  insert into public.narratore_uso as u (giorno, chi, n) values (g, c, 1)
-  on conflict (giorno, chi) do update set n = u.n + 1 where u.n < lim
-  returning true;
-$$;
-
-revoke all on function public.narratore_conta (date, text, integer) from public, anon, authenticated;
-grant execute on function public.narratore_conta (date, text, integer) to service_role;
-
--- Pulizia: i conteggi e le missioni più vecchi di un mese non servono più.
-delete from public.narratore_uso where giorno < current_date - 30;
-delete from public.narratore_cache where created_at < now() - interval '30 days';
+alter table public.narratore enable row level security;
+revoke all on table public.narratore from anon, authenticated;

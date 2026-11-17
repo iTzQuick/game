@@ -11,9 +11,11 @@ import { ENEMY_TYPES, pickMods, rng, scaling } from './defs';
 import { generateDungeon, inRect, roomAt, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
-import { EnemySim, type Hit, type PlayerView } from './sim';
-import { FRAGMENTS, generateItem } from '../progress/defs';
-import { SOMMERSA, sommersaOpen } from '../story/core';
+import { EnemySim, type Focus, type Hit, type PlayerView } from './sim';
+import { FRAGMENTS, RARITIES, generateItem, missionReward, type Item } from '../progress/defs';
+import { groupKeeper } from '../progress/group';
+import { displayName } from '../game/store';
+import { difficolta, missioneCompiuta } from '../narrator/core';
 
 const TICK_MS = 33;
 const SNAP_HZ = 15;
@@ -69,7 +71,20 @@ export class HostDirector {
         nextTick: now + 250,
         final: isC ? { dmg: msg.z.finalDmg ?? 80, r: 4.5 } : undefined,
       });
-    } else if (msg.t === 'runreq') this.onRunRequest(from, msg.a, msg.w);
+    } else if (msg.t === 'runreq') this.onRunRequest(from, msg.a, msg.m);
+    else if (msg.t === 'edie' || msg.t === 'mfail') this.missionEvent(msg);
+  }
+
+  /** Avanzamento della missione: nemici giusti sconfitti, regole infrante. */
+  private missionEvent(msg: CombatMsg) {
+    const run = getRoom()?.roomState.run;
+    const m = run?.missione;
+    if (!run || !m || m.esito || run.phase !== 'active') return;
+    if (msg.t === 'edie' && m.obiettivo.tipo === 'sconfiggi' && msg.type === m.obiettivo.nemico) {
+      this.updateRun({ missione: { ...m, conta: m.conta + 1 } });
+    } else if (msg.t === 'mfail' && msg.k === 'pozione' && m.obiettivo.tipo === 'senza_pozioni' && !m.fallita) {
+      this.updateRun({ missione: { ...m, fallita: true } });
+    }
   }
 
   private applyHits(from: string, hits: Hit[]) {
@@ -78,7 +93,7 @@ export class HostDirector {
     for (const h of hits) for (const ev of this.sim.applyHit(from, h, now)) emitCombat(ev);
   }
 
-  private onRunRequest(from: string, a: 'start' | 'leave' | 'abandon', w?: string) {
+  private onRunRequest(from: string, a: 'start' | 'leave' | 'abandon', missionId?: string) {
     const room = getRoom();
     if (!room) return;
     const run = room.roomState.run;
@@ -86,19 +101,21 @@ export class HostDirector {
       const seed = Math.floor(Math.random() * 2 ** 31);
       room.updateRoom((s) => {
         const grado = s.grado ?? 1;
+        // una missione del giorno non ancora compiuta, oppure una Frattura normale
+        const m = missionId && !s.fatte?.includes(missionId) ? s.narrazione?.missioni.find((x) => x.id === missionId) : undefined;
+        if (missionId && !m) return s;
         const next: RunState = {
           id: s.v + 1,
           seed,
           grado,
-          mods: pickMods(grado, rng(seed ^ 0x5bd1e995)),
+          mods: m ? [...m.modificatori] : pickMods(grado, rng(seed ^ 0x5bd1e995)),
           phase: 'countdown',
           cleared: 1,
           fight: -1,
           wave: 0,
           wipes: 0,
+          missione: m ? { id: m.id, titolo: m.titolo, obiettivo: m.obiettivo, nemico: m.nemico, conta: 0, fallita: false, inizio: 0 } : null,
         };
-        // la Città Sommersa si apre dopo la prima Frattura richiusa
-        if (w === SOMMERSA && sommersaOpen(s.gstats ?? { fratture: 0 })) next.world = SOMMERSA;
         return { ...s, run: next };
       });
     } else if (run && ((a === 'leave' && run.phase === 'complete') || (a === 'abandon' && from === room.self.id))) {
@@ -147,7 +164,9 @@ export class HostDirector {
         this.countdownFor = run.id;
         this.countdownEnd = now + COUNTDOWN_MS;
       }
-      if (now >= this.countdownEnd) this.updateRun({ phase: 'active' });
+      if (now >= this.countdownEnd) {
+        this.updateRun(run.missione ? { phase: 'active', missione: { ...run.missione, inizio: Date.now() } } : { phase: 'active' });
+      }
       return;
     }
 
@@ -185,13 +204,34 @@ export class HostDirector {
 
   private spawnWave(run: RunState, roomIndex: number, wave: number, playerCount: number, now: number) {
     const rand = rng(run.seed + roomIndex * 977 + wave * 131 + run.wipes * 7919);
-    this.sim!.spawnWave(roomIndex, wave, playerCount, run.grado, rand, now);
+    this.sim!.spawnWave(roomIndex, wave, playerCount, run.grado, rand, now, this.focus(run, roomIndex, wave));
+  }
+
+  /** Il nemico della missione: abbastanza da poter compiere l'obiettivo "sconfiggi". */
+  private focus(run: RunState, roomIndex: number, wave: number): Focus | undefined {
+    const m = run.missione;
+    if (!m || !this.dungeon) return undefined;
+    if (m.obiettivo.tipo === 'sconfiggi') {
+      const need = m.obiettivo.quanti - m.conta;
+      let wavesLeft = -wave;
+      for (let r = roomIndex; r < this.dungeon.rooms.length; r++) {
+        if (this.dungeon.rooms[r].kind === 'combat') wavesLeft += this.wavesFor(r, run.grado);
+      }
+      return { type: m.obiettivo.nemico, min: need > 0 ? Math.ceil(need / Math.max(1, wavesLeft)) : 0, share: 0.25 };
+    }
+    return m.nemico ? { type: m.nemico, min: 1, share: 0.3 } : undefined;
   }
 
   private progress(run: RunState, players: PlayerView[], now: number) {
     const sim = this.sim!;
     const d = this.dungeon!;
     const room = getRoom()!;
+
+    // missione "nessuno cade": basta un giocatore a terra
+    const mis = run.missione;
+    if (mis && !mis.fallita && mis.obiettivo.tipo === 'nessuno_cade' && players.some((p) => !p.alive)) {
+      this.updateRun({ missione: { ...mis, fallita: true } });
+    }
 
     if (run.fight < 0) {
       const idx = run.cleared;
@@ -233,16 +273,36 @@ export class HostDirector {
         ? [generateItem(Math.random, run.grado, 2), generateItem(Math.random, run.grado)]
         : [generateItem(Math.random, run.grado)];
       emitCombat({ t: 'loot', items, frags: last ? FRAGMENTS.boss(run.grado) : FRAGMENTS.room(run.grado) }, { to: id });
+      noteRareLoot(id, items);
+    }
+    // missione del giorno: si decide quando l'Eco cade
+    const cur = room.roomState.run?.missione;
+    const esito: 'compiuta' | 'fallita' | undefined = last && cur ? (missioneCompiuta(cur, Date.now()) ? 'compiuta' : 'fallita') : undefined;
+    if (esito === 'compiuta' && cur) {
+      const reward = missionReward(difficolta({ obiettivo: cur.obiettivo, modificatori: run.mods }), run.grado);
+      for (const id of room.admittedIds) {
+        const items = reward.minRarity === null ? [] : [generateItem(Math.random, run.grado, reward.minRarity)];
+        emitCombat({ t: 'loot', items, frags: reward.frags, why: cur.titolo }, { to: id });
+        noteRareLoot(id, items);
+      }
     }
     room.updateRoom((s) => {
       if (!s.run) return s;
+      const missione = s.run.missione && esito ? { ...s.run.missione, esito } : s.run.missione;
       return {
         ...s,
-        run: { ...s.run, cleared: run.fight + 1, fight: -1, wave: 0, phase: last ? 'complete' : 'active' },
+        run: { ...s.run, cleared: run.fight + 1, fight: -1, wave: 0, phase: last ? 'complete' : 'active', missione },
         grado: last ? run.grado + 1 : s.grado,
         best: last ? Math.max(s.best ?? 0, run.grado) : s.best,
       };
     });
+  }
+}
+
+/** I bottini leggendari (e oltre) finiscono nel diario della compagnia. */
+function noteRareLoot(playerId: string, items: Item[]) {
+  for (const it of items) {
+    if (it.rarity >= 3) groupKeeper.note(`${displayName(playerId)} ha trovato un oggetto ${RARITIES[it.rarity].name.toLowerCase()}: ${it.name}.`);
   }
 }
 

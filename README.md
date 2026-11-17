@@ -2,35 +2,31 @@
 
 Action-RPG cooperativo 3D nel browser (PC e telefono), fino a 4 giocatori su invito.
 
-Stato: **tappa 6** della roadmap, il narratore AI e la Città Sommersa. Prima: la
-progressione (tappa 5, senza gli avatar dalle foto per ora), il combattimento (tappa 4)
-e il Crocevia online (tappa 3).
+Stato: **tappa 6** della roadmap, il narratore AI (prima parte: missioni del giorno,
+dialoghi e indizi scritti da Claude). Prima: la progressione (tappa 5, senza gli avatar
+dalle foto, per ora), il combattimento (tappa 4) e il Crocevia online (tappa 3).
 
 ## Cosa c'è
 
-### Tappa 6: il narratore e la Città Sommersa
+### Tappa 6: il narratore
 
-- **La Città Sommersa**: il suo portale al Crocevia si accende quando la compagnia ha
-  richiuso la prima Frattura. Da lì si entra in una Frattura della Città: pietra verde
-  d'acqua, nebbia marina, un velo d'acqua sui pavimenti e bolle che salgono.
-- **Atto I**, cinque missioni scritte a mano che raccontano la Città (stanze, Ombre,
-  Riflessi, una Frattura senza cadere tutti, l'Eco della Città). Contano solo dentro la
-  Città. A ogni missione compiuta, al ritorno al Crocevia il narratore racconta come è
-  andata e presenta la prossima.
-- **Missioni giornaliere**: tre al giorno per la compagnia, valide ovunque. Le scrive
-  **Claude Opus** leggendo il diario del gruppo (Fratture richiuse, missioni compiute),
-  una volta al giorno per compagnia. Finché non arrivano, o se Claude non risponde, ci
-  sono quelle di riserva (un libro di 10 missioni scritte a mano, scelte in base al giorno).
-- **Il Custode Muto parla**: ascoltandolo, le sue battute le scrive **Claude Haiku**,
-  sulla missione in corso e su quello che il gruppo ha fatto. Le battute sono già pronte
-  quando lo si ascolta, quindi non si aspetta mai; senza Claude restano quelle scritte.
-- **Ricompense**: esperienza e frammenti, per tutti. Le calcola il gioco
-  dall'obiettivo, non Claude. Le missioni le conta l'host e si salvano con la compagnia.
-- Riquadro delle missioni in alto a sinistra (sul telefono: missione dell'Atto e
-  giornaliere riassunte in una riga) e pannello con il racconto (tasto **M**, pulsante 📜).
-
-Regole e testi in `src/story/core.ts` (testati); la funzione su Supabase in
-`supabase/functions/narratore/index.ts`.
+- **Tre missioni al giorno** per la compagnia (pulsante 📜, tasto M): ognuna è una
+  Frattura con una richiesta speciale. Obiettivi: sconfiggere un certo numero di un
+  nemico, nessuno deve cadere, niente pozioni, entro un tempo, oppure solo richiudere.
+  Possono avere 0–2 modificatori e un nemico che compare più spesso. Le stelle dicono
+  la difficoltà; la ricompensa (frammenti e, dalle missioni medie, un oggetto almeno
+  raro) la calcola il gioco. Una missione compiuta resta fatta fino a mezzanotte (ora
+  italiana). Durante la Frattura una riga in alto mostra l'avanzamento.
+- **Le scrive Claude** per ogni compagnia sul cloud, leggendo il suo diario: Claude
+  Opus 5.5 per le missioni e gli indizi, Claude Haiku 5.5 per le battute brevi. Senza
+  account, con una compagnia locale o se il narratore non risponde, ci sono le
+  **missioni di riserva** (diverse ogni giorno, uguali per tutta la compagnia): il
+  gioco non aspetta mai il narratore.
+- **Il Custode Muto** dice le battute del giorno; **l'Eco** parla quando la Frattura si apre.
+- **Biblioteca:** a ogni nuovo record di Grado il narratore scrive un indizio sul
+  mistero (senza mai svelarlo), accanto alle pagine fisse.
+- **Diario della compagnia** (Sala dei trofei): Fratture richiuse, record, edifici
+  costruiti, missioni compiute o fallite, bottini leggendari. È ciò che legge il narratore.
 
 ### Tappa 5: la progressione
 
@@ -125,7 +121,7 @@ documento dice che si tarano giocando.
 | Classe | C | Pulsante "Classe" |
 | Personaggio e talenti | P | Pulsante 👤 |
 | Zaino | I | Pulsante 🎒 |
-| Missioni | M | Pulsante 📜 |
+| Missioni di oggi | M | Pulsante 📜 |
 | Pozione | H | Pulsante 🧪 |
 
 Chi è host vede anche **Abbandona**, che riporta tutti al Crocevia.
@@ -162,21 +158,6 @@ pubblica da solo su GitHub Pages a ogni aggiornamento del ramo `main`
   2. in *Authentication → Sign In / Providers → Email* disattiva **Confirm email**
      (altrimenti servirebbe un'email di conferma, e il piano gratuito ne manda pochissime).
   Senza questi passi si gioca lo stesso, da ospite.
-- **Per il narratore** (tappa 6), una volta sola:
-  1. la chiave di Anthropic va nei segreti delle funzioni: *Edge Functions → Secrets*,
-     nome `ANTHROPIC_API_KEY` (non va mai nel gioco né nel repo);
-  2. nel *SQL Editor* esegui `supabase/narratore.sql` (la memoria delle giornaliere e i
-     limiti di spesa);
-  3. *Edge Functions → Deploy a new function → Via Editor*: nome `narratore`, incolla il
-     contenuto di `supabase/functions/narratore/index.ts` e pubblica;
-  4. nelle impostazioni della funzione disattiva **Verify JWT** (il gioco usa la chiave
-     publishable; chi chiede lo riconosce la funzione).
-  Senza questi passi il gioco usa le missioni e le battute scritte a mano. Limiti al
-  giorno (in cima alla funzione): 6 richieste di giornaliere a testa e 200 in tutto,
-  60 battute a testa e 5000 in tutto. Con Opus una giornata di giornaliere costa circa
-  dieci centesimi per compagnia, le battute con Haiku molto meno; conviene comunque un tetto di spesa
-  mensile sulla console di Anthropic. In modalità locale (`?rete=locale`) il narratore
-  resta spento.
 
 Per usare un altro progetto Supabase basta cambiare i due valori in `.env.production`
 (o crearne una copia in `.env.local` per lo sviluppo).
@@ -238,11 +219,13 @@ src/
              regia della Frattura, abilità e combo, stato del combattimento, grafica
   world/     il Crocevia, la Frattura e le interazioni
   fx/        fendenti, anelli, lampi, raggi, ping
-  story/     missioni (regole pure), host che le conta, narratore (Claude via Supabase)
-  ui/        menu, interfaccia, controlli touch, statistiche, missioni
-supabase/    tabelle (schema.sql, narratore.sql) e la funzione del narratore
+  ui/        menu, interfaccia, controlli touch, statistiche
+  narrator/  missioni del giorno, battute, indizi (core.ts, condiviso con la
+             funzione Supabase), chiamate al narratore (client.ts), logica della
+             funzione (server.ts)
 tests/       test unitari (vitest)
-scripts/     test end-to-end multigiocatore (Playwright)
+scripts/     test end-to-end multigiocatore (Playwright), file della funzione narratore
+supabase/    tabelle (schema.sql, narratore.sql) e funzione narratore
 ```
 
 Le regole della stanza (`src/net/roomLogic.ts`) sono funzioni pure: ogni dispositivo
@@ -306,8 +289,33 @@ Con `?modelli=0` nell'indirizzo si gioca con le forme semplici e la pietra a tin
 deboli). Il test end-to-end lo usa in tutte le finestre tranne una, perché senza
 scheda video tante finestre con i modelli scendono a pochi fotogrammi al secondo.
 
+### Il narratore su Supabase
+
+La chiave di Claude non sta mai nel gioco: la usa solo la funzione Supabase
+`narratore`, che la legge dal segreto `ANTHROPIC_API_KEY` del progetto.
+
+- `supabase/narratore.sql`: la tabella dove la funzione tiene le giornate e gli
+  indizi già scritti (da eseguire una volta nel SQL Editor). Dal gioco non si legge.
+- `supabase/functions/narratore/index.ts`: la funzione intera, **generata** da
+  `node scripts/narratore-funzione.mjs` unendo `src/narrator/core.ts`,
+  `src/narrator/server.ts` e `supabase/functions/narratore/deno.ts`. Si incolla così
+  com'è nel pannello di Supabase (Edge Functions → Deploy a new function → Via Editor,
+  nome `narratore`), con la verifica JWT della piattaforma spenta: il token di chi
+  chiama lo controlla la funzione stessa. Un test controlla che il file sia aggiornato.
+
+Cosa fa la funzione a ogni richiesta (solo POST, solo membri della compagnia):
+
+1. controlla l'account dal token e che sia nella compagnia (tabella `groups`);
+2. legge dal database, non dal giocatore, Grado, record, edifici e diario;
+3. se la giornata (o l'indizio per quel record) è già scritta la restituisce;
+   altrimenti la scrive una volta sola, anche se più giocatori chiedono insieme;
+4. limiti: al massimo `LIMITE_24_ORE` (60) lavori in 24 ore per tutte le compagnie,
+   3 tentativi per lavoro; Claude risponde in JSON con uno schema fisso
+   (`output_config.format`) e il gioco controlla comunque tutto prima di usarlo.
+
 ## Prossima tappa
 
 - Gli avatar dalle foto (tappa 5, in attesa).
-- Tappa 7: gli eventi della settimana e l'Osservatorio. Dopo l'Atto I, la Foresta dei
-  Sussurri.
+- Tappa 6, seconda parte: la Città Sommersa (missioni della storia, ossigeno e bolle,
+  Annegati e Anguille d'ombra, il boss La Campana, un frammento di verità e il voto
+  del gruppo).

@@ -136,10 +136,6 @@ async function fratturaTests(browser) {
   );
   for (const p of [A, B, C]) await p.keyboard.press('Escape');
 
-  // tappa 6: le giornaliere (di riserva: in locale il narratore è spento) arrivano a tutti
-  const daily = await Promise.all([A, B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.storia?.daily.length === 3, null, 8000)));
-  check(daily.every(Boolean), 'le tre missioni giornaliere arrivano a tutti');
-
   // chi non è host chiede di aprire la Frattura
   await g(B, () => window.__fratture.runRequest('start'));
   const opened = await Promise.all([A, B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
@@ -278,43 +274,6 @@ async function fratturaTests(browser) {
   const homePos = await g(C, () => ({ ...window.__fratture.local.pos }));
   check(home.every(Boolean) && Math.hypot(homePos.x, homePos.z) < 20, 'si torna tutti al Crocevia');
   await C.screenshot({ path: `${SHOTS}/ritorno-crocevia.png` });
-
-  // ---------- tappa 6: la Città Sommersa e le missioni ----------
-  const tale = await C.waitForSelector('.dialog-title:has-text("Il narratore")', { timeout: 6000 }).then(
-    () => true,
-    () => false,
-  );
-  check(tale, 'tornati al Crocevia, il narratore racconta che la Città Sommersa si è accesa');
-  for (const p of [B, C]) await p.keyboard.press('Escape');
-  await g(C, () => window.__fratture.runRequest('start', 'citta-sommersa'));
-  const inCity = await Promise.all([B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.world === 'citta-sommersa' && window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
-  check(inCity.every(Boolean), 'dal suo portale si entra nella Città Sommersa (tutti)');
-  await sleep(600);
-  await enterRoom(B, 1);
-  await enterRoom(C, 1);
-  await waitFor(B, () => window.__fratture.director.debug.sim?.enemies.size > 0, null, 8000);
-  for (let i = 0; i < 25; i++) {
-    const cl = await g(B, () => window.__fratture.getGame().room.run?.cleared ?? 0);
-    if (cl >= 2) break;
-    await strikeAll(C, 80);
-    await sleep(400);
-  }
-  const story = await Promise.all([B, C].map((p) => waitFor(p, () => window.__fratture.getGame().room.storia?.capProg === 1, null, 6000)));
-  check(story.every(Boolean), 'una stanza ripulita nella Città fa avanzare la missione dell’Atto I (1/3)');
-  await C.screenshot({ path: `${SHOTS}/citta-sommersa.png` });
-  // una giornaliera compiuta: l'host manda la ricompensa a tutti
-  const frags0 = await g(C, () => window.__fratture.getProgress().save.fragments);
-  await g(B, () => {
-    const r = window.__fratture.getRoom();
-    r.updateRoom((s) => ({ ...s, storia: { ...s.storia, daily: [{ ...s.storia.daily[0], goal: { k: 'combo', n: 1 } }], dailyProg: [0] } }));
-    window.__fratture.storyKeeper.debug.feed({ k: 'combo', mondo: 'citta-sommersa', grado: 2 });
-  });
-  const paid = await waitFor(C, (f) => window.__fratture.getProgress().save.fragments > f, frags0, 6000);
-  check(paid, 'giornaliera compiuta: la ricompensa arriva anche a chi non è host');
-  await C.keyboard.press('KeyM');
-  await C.waitForSelector('.missions-panel', { timeout: 3000 }).catch(() => {});
-  await C.screenshot({ path: `${SHOTS}/missioni.png` });
-  await C.keyboard.press('Escape');
   await ctx.close();
 
   // ---------- tutte le abilità di tutte le classi, senza errori ----------
@@ -368,6 +327,149 @@ async function fratturaTests(browser) {
   await shotPage.screenshot({ path: `${SHOTS}/frattura-4-classi.png` });
   await shotPage.setViewportSize({ width: 480, height: 270 });
   await ctx2.close();
+}
+
+// ---------------- Narratore: missioni del giorno ----------------
+
+async function missionsTest(browser) {
+  const ctx = await browser.newContext();
+  const A = await openPlayer(ctx, 'Ada');
+  await waitJoined(A);
+  const code = (await state(A)).code;
+  const B = await openPlayer(ctx, 'Bruno', { code });
+  await waitJoined(B);
+  await Promise.all([A, B].map((p) => waitMembers(p, 2)));
+  await A.click('.class-card:has-text("Guardiano")');
+  await B.click('.class-card:has-text("Custode")');
+  await Promise.all([A, B].map((p) => p.waitForFunction(() => Object.keys(window.__fratture.getGame().room.classes).length === 2, null, { timeout: 8000 })));
+  for (const p of [A, B]) await p.keyboard.press('Escape');
+
+  // senza account: le missioni di riserva del giorno, uguali per tutti
+  const ready = await Promise.all([A, B].map((p) => waitFor(p, () => window.__fratture.getGame().room.narrazione?.missioni.length === 3, null, 8000)));
+  const nA = await g(A, () => window.__fratture.getGame().room.narrazione);
+  const nB = await g(B, () => window.__fratture.getGame().room.narrazione);
+  check(ready.every(Boolean) && nA.fonte === 'riserva' && JSON.stringify(nA) === JSON.stringify(nB), 'tre missioni del giorno (di riserva, senza account), uguali per tutti');
+  const why = await g(B, () => window.__fratture.getGame().room.statoNarratore);
+  check(/account/.test(why), `il pannello spiega perché sono di riserva: "${why}"`);
+
+  // missioni di prova, decise dall'host (come se le avesse scritte il narratore)
+  await g(A, () => {
+    const day = window.__fratture.getGame().room.narrazione.giorno;
+    const n = {
+      giorno: day,
+      fonte: 'claude',
+      missioni: [
+        { id: `${day}-1`, titolo: 'Caccia di prova', racconto: 'Le Ombre di prova marciano.', obiettivo: { tipo: 'sconfiggi', nemico: 'ombra', quanti: 1 }, modificatori: ['veloci'], nemico: 'ombra' },
+        { id: `${day}-2`, titolo: 'Tutti in piedi', racconto: 'Nessuno deve cadere.', obiettivo: { tipo: 'nessuno_cade' }, modificatori: [], nemico: null },
+        { id: `${day}-3`, titolo: 'Senza sete', racconto: 'Niente pozioni.', obiettivo: { tipo: 'senza_pozioni' }, modificatori: [], nemico: 'bruto' },
+      ],
+      custode: [['Il Custode di prova alza la mano.', '«Questa è una battuta del narratore.»']],
+      eco: ['«Eco di prova.»'],
+    };
+    window.__fratture.getRoom().updateRoom((s) => ({ ...s, narrazione: n, fatte: [], statoNarratore: '' }));
+  });
+  await waitFor(B, () => window.__fratture.getGame().room.narrazione?.fonte === 'claude', null, 5000);
+
+  // il Custode usa le battute del giorno
+  await waitFor(B, () => typeof window.__fratture.local?.teleport === 'function', null, 15000);
+  await g(B, () => window.__fratture.local.teleport(0, 2.5));
+  await sleep(400);
+  await B.keyboard.press('g');
+  const custode = await waitFor(B, () => (window.__fratture.getGame().dialog?.lines ?? []).join(' ').includes('battuta del narratore'), null, 4000);
+  const hint = await g(B, () => (window.__fratture.getGame().dialog?.lines ?? []).some((l) => l.includes('tasto M')));
+  check(custode && hint, 'il Custode dice le battute del narratore e ricorda le missioni');
+  await g(B, () => window.__fratture.store.setState({ dialog: null }));
+
+  // pannello (tasto M) e partenza da chi non è host
+  await B.keyboard.press('m');
+  await B.waitForSelector('.mission', { timeout: 4000 }).catch(() => {});
+  const cards = await B.locator('.mission').count();
+  check(cards === 3, `il pannello Missioni (tasto M) mostra ${cards} missioni`);
+  await B.setViewportSize({ width: 1280, height: 720 });
+  await sleep(300);
+  await B.screenshot({ path: `${SHOTS}/missioni.png` });
+  await B.click('.mission:has-text("Caccia di prova") button:has-text("Parti")');
+  const counting = await waitFor(B, () => window.__fratture.getGame().room.run?.missione?.titolo === 'Caccia di prova', null, 6000);
+  const ecoShown = await B.waitForSelector('.eco-line', { timeout: 3000 }).then(
+    () => true,
+    () => false,
+  );
+  await B.screenshot({ path: `${SHOTS}/missione-apertura.png` });
+  const run0 = await runOf(B);
+  check(counting && run0.mods.join() === 'veloci', 'la missione apre la Frattura con i suoi modificatori');
+  check(ecoShown, 'all’apertura parla l’Eco');
+  await B.setViewportSize({ width: 480, height: 270 });
+
+  await Promise.all([A, B].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
+  await sleep(600);
+  await enterRoom(A, 1);
+  await enterRoom(B, 1);
+  await waitFor(A, () => window.__fratture.combat.enemies.size > 0, null, 8000);
+  await sleep(500);
+  const ombre = await g(A, () => [...window.__fratture.director.debug.sim.enemies.values()].filter((e) => e.type === 'ombra').length);
+  check(ombre >= 1, `il nemico della missione è nella stanza (${ombre} Ombre)`);
+  for (let i = 0; i < 20; i++) {
+    if ((await runOf(A)).cleared >= 2) break;
+    await strikeAll(A, 500);
+    await sleep(350);
+  }
+  const counted = await waitFor(B, () => window.__fratture.getGame().room.run?.missione?.conta >= 1, null, 5000);
+  check(counted, 'le Ombre sconfitte contano per la missione, per tutti');
+  await B.waitForSelector('.mission-line', { timeout: 3000 }).then(
+    () => check(true, 'la riga della missione è in alto durante la Frattura'),
+    () => check(false, 'la riga della missione è in alto durante la Frattura'),
+  );
+
+  // salto al boss e vittoria
+  await g(A, () => {
+    const d = window.__fratture.director.debug.dungeon;
+    window.__fratture.getRoom().updateRoom((s) => ({ ...s, run: { ...s.run, cleared: d.rooms.length - 1, fight: -1, wave: 0 } }));
+  });
+  await sleep(500);
+  const last = await g(A, () => window.__fratture.combat.dungeon.rooms.length - 1);
+  await enterRoom(A, last);
+  await enterRoom(B, last);
+  await waitFor(A, () => [...window.__fratture.combat.enemies.values()].some((e) => e.type === 'eco'), null, 8000);
+  const frags0 = await g(B, () => window.__fratture.getProgress().save.fragments);
+  for (let i = 0; i < 30; i++) {
+    if ((await runOf(A)).phase === 'complete') break;
+    await strikeAll(A, 600);
+    await sleep(350);
+  }
+  const done = await waitFor(B, () => window.__fratture.getGame().room.run?.missione?.esito === 'compiuta', null, 6000);
+  check(done, 'boss sconfitto: missione compiuta');
+  const fatte = await waitFor(B, (id) => window.__fratture.getGame().room.fatte.includes(id), run0.missione.id, 5000);
+  check(fatte, 'la missione compiuta resta segnata come fatta per oggi');
+  const reward = await waitFor(B, (f) => window.__fratture.getProgress().save.fragments > f + 40, frags0, 5000);
+  const toastSeen = await g(B, () => window.__fratture.getGame().toasts.some((t) => t.text.includes('Missione «Caccia di prova» compiuta')));
+  check(reward && toastSeen, 'ognuno riceve la ricompensa della missione');
+  const diary = await waitFor(B, () => window.__fratture.getGame().room.diario.some((d) => d.text.includes('Missione «Caccia di prova» compiuta')), null, 5000);
+  check(diary, 'il diario della compagnia registra la missione');
+  // non si può ripetere
+  await g(B, (id) => window.__fratture.runRequest('leave'), null);
+  await Promise.all([A, B].map((p) => waitFor(p, () => window.__fratture.getGame().room.run === null, null, 6000)));
+  await g(B, (id) => window.__fratture.runRequest('start', id), run0.missione.id);
+  await sleep(1200);
+  check((await runOf(A)) === null, 'una missione già compiuta non riparte');
+
+  // missione "nessuno cade": basta una caduta per fallirla
+  const m2 = await g(A, () => window.__fratture.getGame().room.narrazione.missioni[1].id);
+  await g(B, (id) => window.__fratture.runRequest('start', id), m2);
+  await Promise.all([A, B].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
+  await sleep(500);
+  await enterRoom(A, 1);
+  await enterRoom(B, 1);
+  await waitFor(A, () => window.__fratture.combat.enemies.size > 0, null, 8000);
+  await g(B, () => window.__fratture.combat.damageMe(99999, performance.now()));
+  const failed = await waitFor(B, () => window.__fratture.getGame().room.run?.missione?.fallita === true, null, 6000);
+  const failLine = await B.waitForSelector('.mission-line.failed', { timeout: 3000 }).then(
+    () => true,
+    () => false,
+  );
+  check(failed && failLine, 'nessuno deve cadere: Bruno cade e la missione fallisce');
+  await g(A, () => window.__fratture.runRequest('abandon'));
+  await waitFor(A, () => window.__fratture.getGame().room.run === null, null, 6000);
+  await ctx.close();
 }
 
 // ---------------- Grafica: modelli 3D, texture, icone ----------------
@@ -564,6 +666,7 @@ async function main() {
     await ctx2.close();
 
     await fratturaTests(browser);
+    await missionsTest(browser);
     await modelsTest(browser);
   } finally {
     await browser.close();

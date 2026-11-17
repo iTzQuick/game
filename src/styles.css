@@ -1949,150 +1949,152 @@ table.controls th.hl {
   transition: opacity 0.35s;
 }
 
-/* ---------- Missioni (tappa 6) ---------- */
-
-/* il riquadro piccolo sotto la stanza */
-.missions-mini {
-  pointer-events: auto;
-  display: grid;
-  gap: 2px;
-  max-width: 200px;
-  min-height: 0;
-  padding: 5px 9px;
-  border-radius: 10px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  backdrop-filter: blur(6px);
-  text-align: left;
-  font: inherit;
-  color: var(--text);
-  cursor: pointer;
+/* --- Narratore: missioni del giorno, Eco, indizi, diario --------------------------- */
+.icon-btn {
+  position: relative;
 }
-.missions-mini .m-row {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  font-size: 11px;
-  line-height: 1.35;
-  min-width: 0;
-}
-.missions-mini .m-row i {
-  font-style: normal;
+.icon-btn .dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: var(--accent-2);
+  color: #fff;
   font-size: 10px;
-  width: 12px;
-  flex: none;
+  font-style: normal;
+  line-height: 16px;
   text-align: center;
 }
-.missions-mini .m-title {
-  flex: 1;
-  min-width: 0;
+.top-center .mission-line {
+  max-width: 100%;
+  padding: 2px 10px;
+  border-radius: 99px;
+  background: rgba(14, 10, 26, 0.6);
+  border: 1px solid rgba(255, 216, 107, 0.35);
+  color: #ffe3a1;
+  font-size: 11px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.missions-mini .m-row b {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent);
-  font-weight: 600;
+.top-center .mission-line.done {
+  border-color: #7dffb0;
+  color: #b8ffd4;
 }
-.missions-mini .m-row.story .m-title {
-  color: #8ff2dc;
+.top-center .mission-line.failed {
+  border-color: rgba(255, 107, 129, 0.5);
+  color: #ff9aaa;
 }
-.missions-mini .m-row.story b {
-  color: #8ff2dc;
+.run-countdown .countdown-mission {
+  max-width: min(90vw, 460px);
+  color: #ffe3a1;
+  font-family: system-ui, sans-serif;
 }
-.missions-mini .m-row.done {
-  opacity: 0.5;
+.run-countdown .eco-line {
+  max-width: min(90vw, 460px);
+  margin-top: 6px;
+  color: #ffc2ec;
+  font-size: 17px;
 }
-
-/* il pannello */
-.missions-panel section + section {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.missions-panel h3 {
-  margin: 0 0 8px;
-  font-size: 15px;
-}
-.missions-panel h3 small {
-  font-weight: 400;
-  font-size: 12px;
+.missions {
+  display: grid;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 .mission {
-  padding: 9px 11px;
-  margin-bottom: 8px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--line);
-}
-.mission.current {
-  border-color: rgba(143, 242, 220, 0.45);
-  background: rgba(47, 214, 160, 0.07);
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 216, 107, 0.3);
+  background: rgba(255, 216, 107, 0.05);
 }
 .mission.done {
-  opacity: 0.65;
+  opacity: 0.6;
 }
-.mission .m-head {
+.mission header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
   justify-content: space-between;
-  gap: 4px 10px;
+  align-items: baseline;
+  gap: 8px;
 }
-.mission .m-reward {
+.mission h3 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-weight: 400;
+  color: #ffe3a1;
+}
+.mission p {
+  margin: 0;
+  line-height: 1.45;
+}
+.mission .stars {
+  color: #ffd25a;
+  white-space: nowrap;
+  letter-spacing: 1px;
+}
+.mission-goal {
+  font-weight: 600;
+}
+.mission-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mission .badge {
+  color: #7dffb0;
+  font-size: 13px;
+}
+.mission-source {
+  margin: 10px 0 0;
+}
+.lore .lore-section {
+  margin: 6px 0 0;
+  color: #ffe3a1;
+}
+.lore .lore-narrator {
+  border-left-color: #ffd25a;
+}
+.lore .lore-narrator h3 {
+  color: #ffe3a1;
+}
+.lore h3 small {
+  font-family: system-ui, sans-serif;
   font-size: 11px;
   color: var(--muted);
 }
-.mission .m-intro {
-  margin: 6px 0 0;
-  font-family: Georgia, serif;
-  font-size: 13px;
-  line-height: 1.45;
-  color: #d9d2ee;
-}
-.mission .m-goal {
-  margin-top: 7px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.m-track {
-  position: relative;
-  margin-top: 5px;
-  height: 14px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-.m-track .m-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  background: linear-gradient(90deg, #2fd6a0, #19d3c5);
-}
-.m-track span {
-  position: relative;
+.trophies .diary {
+  grid-column: 1 / -1;
   display: block;
-  text-align: center;
-  font-size: 10px;
-  line-height: 14px;
-  font-variant-numeric: tabular-nums;
+  text-align: left;
+  justify-items: stretch;
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line);
 }
-.tale {
-  margin-top: 6px;
-  font-size: 13px;
-}
-.tale summary {
-  cursor: pointer;
-  color: var(--muted);
-}
-.tale p {
+.diary h3 {
+  margin: 0 0 6px;
   font-family: Georgia, serif;
-  line-height: 1.45;
-  margin: 6px 0 0;
+  font-weight: 400;
+  font-size: 15px;
 }
-
-/* portale acceso (la Città Sommersa) */
-.portal-label.lit {
-  opacity: 0.95;
+.diary ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  max-height: 28vh;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.diary li small {
+  color: var(--muted);
+  margin-right: 4px;
 }

@@ -18,9 +18,13 @@ import { CLASS_STATS } from '../combat/defs';
 import { checkpoint, generateDungeon } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
+import { emitCombat } from '../combat/bus';
 import { modsFor } from '../progress/store';
 import { isBuilt } from '../progress/model';
 import { Avatar, newPose, tickPose } from './Avatar';
+
+/** Ultimo avviso "la missione vieta le pozioni". */
+let potionWarnAt = 0;
 
 const CAPSULE_HALF = 0.5;
 const CAPSULE_RADIUS = 0.38;
@@ -387,8 +391,18 @@ export function LocalPlayer() {
 
     // pozione del Giardino
     if (consume('potion') && alive && !blocked && inRun) {
-      if (combat.drinkPotion()) toast('Pozione: +50% vita');
-      else if (combat.me.potions <= 0) toast(isBuilt(game.room, 'giardino') ? 'Niente più pozioni in questa Frattura' : 'Le pozioni arrivano costruendo il Giardino');
+      // missione "senza pozioni": la prima pressione avvisa, la seconda beve
+      const mis = game.room.run?.missione;
+      const forbidden = mis?.obiettivo.tipo === 'senza_pozioni' && !mis.fallita;
+      const now = performance.now();
+      if (forbidden && now - potionWarnAt > 3000 && combat.me.potions > 0) {
+        potionWarnAt = now;
+        toast('La missione vieta le pozioni: premi di nuovo per bere lo stesso');
+      } else if (combat.drinkPotion()) {
+        toast('Pozione: +50% vita');
+        const host = getRoom()?.hostId;
+        if (forbidden && host) emitCombat({ t: 'mfail', k: 'pozione' }, { to: host });
+      } else if (combat.me.potions <= 0) toast(isBuilt(game.room, 'giardino') ? 'Niente più pozioni in questa Frattura' : 'Le pozioni arrivano costruendo il Giardino');
     }
 
     // gravità

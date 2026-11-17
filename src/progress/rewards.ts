@@ -28,7 +28,7 @@ export function contributeTo(b: BuildingId, n: number) {
   setTimeout(() => (pendingContrib = Math.max(0, pendingContrib - amount)), 6000);
 }
 
-export function gainXp(amount: number, reason?: string) {
+function gainXp(amount: number, reason?: string) {
   const g = getGame();
   const cls = g.room.classes[g.selfId];
   if (!cls || amount <= 0) return;
@@ -59,7 +59,8 @@ export function initRewards(): () => void {
       });
       const best = [...msg.items].sort((a, b) => b.rarity - a.rarity)[0];
       const what = best ? `${RARITIES[best.rarity].name}: ${best.name}` : '';
-      toast(`Bottino! ${what}${msg.items.length > 1 ? ` e altri ${msg.items.length - 1}` : ''} · +${msg.frags} frammenti (tasto I)`, 4500);
+      const head = msg.why ? `Missione «${msg.why}» compiuta!` : 'Bottino!';
+      toast(`${head} ${what}${msg.items.length > 1 ? ` e altri ${msg.items.length - 1}` : ''} · +${msg.frags} frammenti (tasto I)`, 4500);
       if (r.salvaged) toast(`Zaino pieno: smontati in ${r.salvaged} frammenti`);
     } else if (msg.t === 'contribok') {
       const used = msg.used;

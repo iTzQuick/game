@@ -146,13 +146,13 @@ export class EnemySim {
   }
 
   /** Crea un'ondata: il "budget" sale con giocatori, Grado e profondità della stanza. */
-  spawnWave(room: number, wave: number, players: number, grado: number, rand: () => number, now: number): Enemy[] {
+  spawnWave(room: number, wave: number, players: number, grado: number, rand: () => number, now: number, focus?: Focus): Enemy[] {
     const r = this.dungeon.rooms[room];
     if (r.kind === 'boss') {
       const boss = this.spawn('eco', room, r.cx, r.rect.z0 + 7, now);
       return [boss];
     }
-    const types = composeWave(6 + 2 * (players - 1) + (grado - 1) + room + wave, rand, this.mods);
+    const types = composeWave(6 + 2 * (players - 1) + (grado - 1) + room + wave, rand, this.mods, focus);
     const pts = spawnPoints(this.dungeon, room, types.length, rand);
     return types.map((t, i) => this.spawn(t, room, pts[i][0], pts[i][1], now));
   }
@@ -434,14 +434,31 @@ export class EnemySim {
   }
 }
 
+/**
+ * Nemico preferito da una missione: `min` compaiono di sicuro nell'ondata,
+ * poi ogni scelta diventa quel nemico con probabilità `share`.
+ */
+export interface Focus {
+  type: EnemyType;
+  min: number;
+  share: number;
+}
+
 /** Sceglie i tipi di nemici di un'ondata spendendo un "budget". */
-export function composeWave(budget: number, rand: () => number, mods: ModId[]): EnemyType[] {
+export function composeWave(budget: number, rand: () => number, mods: ModId[], focus?: Focus): EnemyType[] {
   const pool: EnemyType[] = ['sciame', 'ombra', 'ombra', 'riflesso', 'velato', 'bruto'];
   const out: EnemyType[] = [];
   let left = budget;
   let guard = 0;
+  if (focus) {
+    for (let i = 0; i < Math.min(focus.min, 8); i++) {
+      out.push(focus.type);
+      left -= ENEMIES[focus.type].cost;
+    }
+  }
   while (left > 0 && out.length < 12 && guard++ < 100) {
     let t = pool[Math.floor(rand() * pool.length)];
+    if (focus && rand() < focus.share) t = focus.type;
     if (t === 'ombra' && mods.includes('velati') && rand() < 0.5) t = 'velato';
     const cost = ENEMIES[t].cost;
     if (cost > left) {

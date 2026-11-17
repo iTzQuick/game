@@ -23,6 +23,7 @@ import {
 } from './roomLogic';
 import { LocalSignaling, SupabaseSignaling, type Signaling } from './signaling';
 import type { CombatMsg } from '../combat/protocol';
+import type { Indizio } from '../narrator/core';
 
 type Vec3 = [number, number, number];
 
@@ -73,7 +74,9 @@ export function supabaseConfig(): { url: string; key: string } | null {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const EMPTY_BASE = {};
 const EMPTY_STATS = { fratture: 0, bosses: 0, kills: 0 };
-const EMPTY_DIARY: string[] = [];
+const EMPTY_LIST: string[] = [];
+const EMPTY_INDIZI: Indizio[] = [];
+const EMPTY_DIARIO: { at: number; text: string }[] = [];
 
 /**
  * Chi sparisce per poco (telefono in tasca, rete che cade) non perde subito la
@@ -309,8 +312,11 @@ export class RoomClient {
       cur.group === (st.group ?? null) &&
       cur.base === (st.base ?? EMPTY_BASE) &&
       cur.gstats === (st.gstats ?? EMPTY_STATS) &&
-      cur.storia === (st.storia ?? null) &&
-      cur.diario === (st.diario ?? EMPTY_DIARY) &&
+      cur.narrazione === (st.narrazione ?? null) &&
+      cur.fatte === (st.fatte ?? EMPTY_LIST) &&
+      cur.indizi === (st.indizi ?? EMPTY_INDIZI) &&
+      cur.diario === (st.diario ?? EMPTY_DIARIO) &&
+      cur.statoNarratore === (st.statoNarratore ?? '') &&
       cur.members.length === admitted.length &&
       cur.members.every((m, i) => m.id === admitted[i].id && m.name === admitted[i].name) &&
       JSON.stringify(cur.peers) === JSON.stringify(peers);
@@ -325,8 +331,11 @@ export class RoomClient {
         group: st.group ?? null,
         base: st.base ?? EMPTY_BASE,
         gstats: st.gstats ?? EMPTY_STATS,
-        storia: st.storia ?? null,
-        diario: st.diario ?? EMPTY_DIARY,
+        narrazione: st.narrazione ?? null,
+        fatte: st.fatte ?? EMPTY_LIST,
+        indizi: st.indizi ?? EMPTY_INDIZI,
+        diario: st.diario ?? EMPTY_DIARIO,
+        statoNarratore: st.statoNarratore ?? '',
         peers,
       });
     }
