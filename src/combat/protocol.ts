@@ -49,10 +49,7 @@ export type CombatMsg =
   | { t: 'bless'; p: V2; r: number; shield: number; speed: number; dur: number }
   | { t: 'alba'; p: V2; r: number; heal?: number }
   | { t: 'combo'; name: string; ids: string[] }
-  /** `w`: il mondo della Frattura da aprire (assente = la Frattura del Crocevia) */
-  | { t: 'runreq'; a: 'start' | 'leave' | 'abandon'; w?: string }
-  /** missione compiuta (host → tutti): ognuno prende la sua ricompensa */
-  | { t: 'mdone'; id: string; tipo: 'storia' | 'giornaliera'; titolo: string; fine: string; xp: number; frags: number }
+  | { t: 'runreq'; a: 'start' | 'leave' | 'abandon' }
   /** bottino deciso dall'host per un giocatore */
   | { t: 'loot'; items: Item[]; frags: number }
   /** frammenti versati in un edificio della base (al host) e conferma */

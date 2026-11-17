@@ -6,9 +6,6 @@ import { getRoom } from '../net/room';
 import { emitCombat } from '../combat/bus';
 import type { Dungeon } from '../combat/dungeon';
 import { BUILDINGS, BUILDING_RADIUS } from '../progress/defs';
-import { SOMMERSA, sommersaOpen } from '../story/core';
-import { custodeBriefing } from '../story/client';
-import { prefetchCustode, takeCustodeLines } from '../story/narrator';
 
 export const ISLAND_RADIUS = 22;
 export const PORTAL_RADIUS = 16.5;
@@ -69,14 +66,9 @@ export const INTERACTABLES: Interactable[] = [
     radius: 3.8,
     label: () => 'Ascolta il Custode Muto',
     act: () => {
-      // le battute di Claude se sono pronte, altrimenti quelle scritte a mano
-      let lines = takeCustodeLines();
-      if (!lines) {
-        lines = CUSTODE_LINES[custodeTurn % CUSTODE_LINES.length];
-        custodeTurn++;
-      }
-      openDialog('Il Custode Muto', custodeBriefing(lines));
-      prefetchCustode();
+      const lines = CUSTODE_LINES[custodeTurn % CUSTODE_LINES.length];
+      custodeTurn++;
+      openDialog('Il Custode Muto', lines);
     },
   },
   ...ALTARS.map<Interactable>((a) => ({
@@ -133,39 +125,15 @@ export const INTERACTABLES: Interactable[] = [
     x: Math.sin(p.angle) * (PORTAL_RADIUS - 1.2),
     z: Math.cos(p.angle) * (PORTAL_RADIUS - 1.2),
     radius: 3.4,
-    label: () => {
-      const s = getGame();
-      if (!portalOpen(p.world.id)) return `Portale spento: ${p.world.name}`;
-      if (s.room.run?.phase === 'countdown') return 'Il portale si sta aprendo…';
-      return `Entra nella ${p.world.name} · Grado ${s.room.grado}`;
-    },
-    act: () => {
-      if (!portalOpen(p.world.id)) {
-        const hint = p.world.id === SOMMERSA ? 'Si accenderà quando avrete richiuso la vostra prima Frattura.' : 'Il portale è spento. Per ora.';
-        openDialog(p.world.name, [p.world.whisper, hint]);
-        return;
-      }
-      const s = getGame();
-      if (s.room.run) return;
-      if (!s.room.classes[s.selfId]) {
-        toast('Scegli prima una classe');
-        setGame({ classPicker: true });
-        return;
-      }
-      runRequest('start', p.world.id);
-    },
+    label: () => `Portale spento: ${p.world.name}`,
+    act: () => openDialog(p.world.name, [p.world.whisper, 'Il portale è spento. Per ora.']),
   })),
 ];
 
-/** Un portale dei mondi è acceso? (Per ora solo la Città Sommersa, dopo la prima Frattura.) */
-export function portalOpen(world: string): boolean {
-  return world === SOMMERSA && sommersaOpen(getGame().room.gstats);
-}
-
 /** Chiede all'host di aprire, lasciare o abbandonare la Frattura. */
-export function runRequest(a: 'start' | 'leave' | 'abandon', w?: string) {
+export function runRequest(a: 'start' | 'leave' | 'abandon') {
   const room = getRoom();
-  if (room?.hostId) emitCombat(w ? { t: 'runreq', a, w } : { t: 'runreq', a }, { to: room.hostId });
+  if (room?.hostId) emitCombat({ t: 'runreq', a }, { to: room.hostId });
 }
 
 /** Cose con cui interagire dentro la Frattura (per ora: il portale d'uscita dopo il boss). */

@@ -9,9 +9,6 @@ import { getRoom } from '../net/room';
 import { createCloudGroup, joinCloudGroup, loadCloudGroup, writeCloudGroup } from './cloud';
 import { addDiary, contribute, emptyGroup, normalizeGroup, type GroupData } from './model';
 import { getProgress, mutate } from './store';
-import type { StoryState } from '../story/core';
-
-const lastLines = (d: GroupData) => d.diario.slice(-6).map((e) => e.text);
 
 const localKey = (code: string) => `fratture.group.${code}`;
 
@@ -119,25 +116,12 @@ class GroupKeeper {
             best: st.best ?? data.best,
             base: st.base ?? data.base,
             stats: st.gstats ?? data.stats,
-            storia: st.storia ?? data.storia,
           };
-          if (!st.diario) {
-            const diario = lastLines(this.data);
-            room.updateRoom((s) => ({ ...s, diario }));
-          }
         } else {
           const { code, data } = await ownGroup();
           this.code = code;
           this.data = data;
-          room.updateRoom((s) => ({
-            ...s,
-            group: code,
-            grado: data.grado,
-            best: data.best,
-            base: data.base,
-            gstats: data.stats,
-            diario: lastLines(data),
-          }));
+          room.updateRoom((s) => ({ ...s, group: code, grado: data.grado, best: data.best, base: data.base, gstats: data.stats }));
         }
       } catch (e) {
         console.warn('Compagnia non caricata', e);
@@ -160,10 +144,8 @@ class GroupKeeper {
       this.completedRun = run.id;
       d.stats = { ...d.stats, fratture: d.stats.fratture + 1, bosses: d.stats.bosses + 1 };
       const names = room.admittedIds.map((id) => displayName(id)).join(', ');
-      const where = run.world === 'citta-sommersa' ? ' nella Città Sommersa' : '';
-      addDiary(d, `Frattura di Grado ${run.grado}${where} richiusa da ${names}${run.wipes ? ` (caduti tutti ${run.wipes === 1 ? 'una volta' : `${run.wipes} volte`})` : ''}.`);
-      const diario = lastLines(d);
-      room.updateRoom((s) => ({ ...s, gstats: d.stats, diario }));
+      addDiary(d, `Frattura di Grado ${run.grado} richiusa da ${names}.`);
+      room.updateRoom((s) => ({ ...s, gstats: d.stats }));
       this.saveSoon();
     }
   }
@@ -183,27 +165,6 @@ class GroupKeeper {
       }
       emitCombat({ t: 'contribok', b: msg.b, used }, { to: from });
     }
-  }
-
-  /** Missioni salvate con la compagnia (null finché la compagnia non è caricata). */
-  get loaded(): GroupData | null {
-    return this.data;
-  }
-
-  setStoria(st: StoryState) {
-    if (!this.data) return;
-    this.data.storia = st;
-    this.saveSoon();
-  }
-
-  /** Una riga nel diario del gruppo (la legge il narratore). */
-  diary(text: string) {
-    const room = getRoom();
-    if (!this.data || !room?.isHost) return;
-    addDiary(this.data, text);
-    const diario = lastLines(this.data);
-    room.updateRoom((s) => ({ ...s, diario }));
-    this.saveSoon();
   }
 
   private saveSoon() {

@@ -88,5 +88,5 @@ export const SURFACES = {
   /** pavimento delle stanze della Frattura */
   dungeonFloor: (fallback = '#352f42', tint?: string) => surface('frattura-pavimento.webp', 0.22, fallback, tint),
   /** muri e colonne della Frattura */
-  dungeonWall: (fallback = '#4a4355', tint?: string) => surface('frattura-muro.webp', 0.38, fallback, tint),
+  dungeonWall: (fallback = '#4a4355') => surface('frattura-muro.webp', 0.38, fallback),
 };

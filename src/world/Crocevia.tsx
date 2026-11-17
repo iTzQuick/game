@@ -16,7 +16,6 @@ import { SkyBand } from './SkyBand';
 import { SURFACES } from './textures';
 import { Icon } from '../ui/Icon';
 import { fadeByDistance } from './nearLabel';
-import { SOMMERSA, sommersaOpen } from '../story/core';
 
 /** Rumore ripetibile per posizione: i vertici condivisi restano attaccati. */
 function hash3(x: number, y: number, z: number): number {
@@ -318,9 +317,6 @@ function Portal({
   );
   const crackMat = useMemo(() => new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.5 }), [tint]);
   const shards = useRef<THREE.Group>(null);
-  // acceso: la Città Sommersa dopo la prima Frattura richiusa
-  const lit = useGame((s) => id === SOMMERSA && sommersaOpen(s.room.gstats));
-  const opening = useGame((s) => lit && s.room.run?.phase === 'countdown');
   const shardData = useMemo(() => {
     const rnd = seeded(Math.round(angle * 1000) + 3);
     return Array.from({ length: 6 }, () => ({ a: rnd() * Math.PI * 2, r: 2.9 + rnd() * 0.9, y: rnd() * 1.2 - 0.6, s: 0.12 + rnd() * 0.18 }));
@@ -328,16 +324,10 @@ function Portal({
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    if (lit) {
-      // acceso: il velo ondeggia come acqua vista da sotto
-      discMat.emissiveIntensity = (opening ? 1.6 : 0.85) + Math.sin(t * 1.7) * 0.18 + Math.sin(t * 3.1 + 1) * 0.1;
-      crackMat.opacity = 0.75 + Math.sin(t * 2.3) * 0.2;
-    } else {
-      // un respiro debole: il portale è spento, non morto
-      discMat.emissiveIntensity = 0.06 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.35;
-      crackMat.opacity = 0.25 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.6;
-    }
-    if (shards.current) shards.current.rotation.z = t * (lit ? 0.35 : 0.08);
+    // un respiro debole: il portale è spento, non morto
+    discMat.emissiveIntensity = 0.06 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.35;
+    crackMat.opacity = 0.25 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.6;
+    if (shards.current) shards.current.rotation.z = t * 0.08;
   });
 
   return (
@@ -390,13 +380,9 @@ function Portal({
           ))}
         </group>
       </group>
-      {quality === 'alta' && !lit && <pointLight position={[0, 2.5, -1.2]} color={tint} intensity={2} distance={7} />}
-      {lit && <pointLight position={[0, 2.8, -1.6]} color={tint} intensity={quality === 'bassa' ? 6 : 10} distance={11} />}
-      {lit && quality !== 'bassa' && (
-        <Sparkles count={quality === 'alta' ? 40 : 20} scale={[2.6, 4, 1.2]} position={[0, 3, -0.4]} size={3} speed={0.6} opacity={0.8} color="#bff7ff" />
-      )}
+      {quality === 'alta' && <pointLight position={[0, 2.5, -1.2]} color={tint} intensity={2} distance={7} />}
       <Html position={[0, 6, 0]} center distanceFactor={16} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
-        <div className={`portal-label${lit ? ' lit' : ''}`} style={{ color: tint }}>
+        <div className="portal-label" style={{ color: tint }}>
           {name}
         </div>
       </Html>

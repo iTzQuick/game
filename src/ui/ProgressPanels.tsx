@@ -41,7 +41,6 @@ import {
 } from '../progress/model';
 import { mutate, useProgress } from '../progress/store';
 import { availableFragments, contributeTo } from '../progress/rewards';
-import { MissionsPanel } from './Missions';
 
 const close = () => setGame({ panel: null });
 
@@ -66,7 +65,6 @@ export function ProgressPanels() {
   if (panel === 'personaggio') return <CharacterPanel />;
   if (panel === 'zaino' || panel === 'forgia') return <InventoryPanel />;
   if (panel === 'base') return <BasePanel />;
-  if (panel === 'missioni') return <MissionsPanel />;
   return null;
 }
 
