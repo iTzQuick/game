@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { leaveRoom } from './game/session';
 import { useGame } from './game/store';
 import { Menu } from './ui/Menu';
+import { AppShell, InstallHint } from './ui/AppShell';
 import { initAccount } from './progress/store';
 
 void initAccount();
@@ -25,11 +26,19 @@ export function App() {
     void loadGame();
   }, []);
 
-  return screen === 'game' ? (
-    <Suspense fallback={<div className="menu"><div className="loading">Il Crocevia ti sta forgiando…</div></div>}>
-      <Game />
-    </Suspense>
-  ) : (
-    <Menu />
+  return (
+    <>
+      {screen === 'game' ? (
+        <Suspense fallback={<div className="menu"><div className="loading">Il Crocevia ti sta forgiando…</div></div>}>
+          <Game />
+        </Suspense>
+      ) : (
+        <>
+          <Menu />
+          <InstallHint />
+        </>
+      )}
+      <AppShell />
+    </>
   );
 }

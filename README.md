@@ -147,6 +147,18 @@ documento dice che si tarano giocando.
 
 Chi è host vede anche **Abbandona**, che riporta tutti al Crocevia.
 
+## Sul telefono, come un'app
+
+- **Icona in Home**: `public/manifest.webmanifest` e le icone in `public/ui/app/`
+  (emblema generato con Higgsfield). Nome sotto l'icona: «Le Fratture».
+- **Prima apertura nel browser del telefono**: una finestra spiega come aggiungerlo
+  alla Home (iPhone: Condividi → Aggiungi alla schermata Home; Android: menu ⋮ →
+  Aggiungi a schermata Home, o il pulsante Installa quando Chrome lo permette). Compare
+  una volta sola; sul PC mai.
+- **Aperto dall'icona**: schermata d'apertura con il logo, poi solo in orizzontale.
+  Android lo blocca da sé (manifest); su iPhone il blocco non è possibile, quindi in
+  verticale compare «Gira il telefono». Codice in `src/ui/AppShell.tsx`.
+
 ## Provarlo subito (senza account)
 
 ```bash
