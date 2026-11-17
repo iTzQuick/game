@@ -307,6 +307,12 @@ Oltre a eroi e nemici, da Higgsfield arrivano anche:
 - **interfaccia** in `public/ui`: logo, sfondo del menu e 32 icone (abilità, classi,
   oggetti, edifici), ritagliate da due fogli 4×4 (`src/ui/Icon.tsx`).
 
+Se un'animazione esce storta su un solo osso (es. la testa girata all'indietro), si
+trova con `scripts/models/confronta-clip.mjs` (confronto con un altro eroe che usa lo
+stesso clip) e si corregge con `scripts/models/copia-osso.mjs`, che copia il movimento
+di quell'osso dall'altro modello. Così è stata sistemata la testa del Custode in corsa
+e a terra.
+
 Con `?modelli=0` nell'indirizzo si gioca con le forme semplici e la pietra a tinta unita (dispositivi molto
 deboli). Il test end-to-end lo usa in tutte le finestre tranne una, perché senza
 scheda video tante finestre con i modelli scendono a pochi fotogrammi al secondo.
