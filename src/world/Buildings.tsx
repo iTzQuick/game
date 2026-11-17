@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { BUILDINGS, BUILDING_RADIUS, type BuildingDef } from '../progress/defs';
 import { useGame } from '../game/store';
 import { stone } from '../player/materials';
+import { PropOr } from '../player/models';
 
 export function Buildings() {
   return (
@@ -41,7 +42,7 @@ function Building({ def }: { def: BuildingDef }) {
     <group position={[x, 0, z]} rotation={[0, def.angle + Math.PI, 0]}>
       <RigidBody type="fixed" colliders={false}>
         <CylinderCollider args={[0.2, 2.2]} position={[0, 0.2, 0]} />
-        {built && <CylinderCollider args={[1.2, 1.2]} position={[0, 1.4, 0.4]} />}
+        {(built || def.later) && <CylinderCollider args={[1.2, 1.2]} position={[0, 1.4, 0.4]} />}
       </RigidBody>
       {/* fondamenta */}
       <mesh material={stone('#3d3747')} position={[0, 0.2, 0]} receiveShadow castShadow>
@@ -50,8 +51,12 @@ function Building({ def }: { def: BuildingDef }) {
       <mesh material={glow} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.42, 0]}>
         <ringGeometry args={[1.9, 2.05, 8]} />
       </mesh>
-      {built ? (
-        <BuiltShape def={def} glow={glow} spin={spin} />
+      {built || def.later ? (
+        // modello 3D (Higgsfield) sulle fondamenta; l'Osservatorio c'è già, ma si apre più avanti
+        <group position={[0, 0.4, 0]}>
+          <PropOr name={def.id} fallback={built ? <BuiltShape def={def} glow={glow} spin={spin} /> : null} />
+          {built && def.id === 'forgia' && <pointLight position={[0, 1.2, 1.8]} color={def.color} intensity={5} distance={6} />}
+        </group>
       ) : (
         // pietre accatastate, in attesa
         <group>
@@ -66,7 +71,7 @@ function Building({ def }: { def: BuildingDef }) {
           ))}
         </group>
       )}
-      <Html position={[0, built ? 3.6 : 2, 0]} center distanceFactor={10} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
+      <Html position={[0, built ? 3.6 : def.later ? 4.4 : 2, 0]} center distanceFactor={10} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
         <div className={`altar-label${built ? ' mine' : ''}`} style={{ borderColor: def.color, color: built ? def.color : undefined }}>
           {def.name}
           {!built && <small> · {def.later ? 'presto' : `${progress}/${def.cost}`}</small>}

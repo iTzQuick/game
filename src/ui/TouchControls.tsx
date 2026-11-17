@@ -9,6 +9,7 @@ import { CLASSES } from '../game/constants';
 import { abilityState } from '../combat/abilities';
 import { SLOTS, abilityName, usePoll } from './CombatHud';
 import { combat } from '../combat/runtime';
+import { Icon } from './Icon';
 
 const JOY_RADIUS = 56;
 const TOUCH_LOOK = 2.2;
@@ -130,10 +131,10 @@ export function TouchControls() {
           </button>
         )}
         <button className="tbtn dodge" onPointerDown={btn('dodge')} aria-label="Schivata">
-          ⤳
+          <Icon name="schivata" size={50} />
         </button>
         <button className="tbtn attack" onPointerDown={btn('attack')} aria-label="Attacco">
-          ⚔
+          <Icon name="attacco" size={84} />
         </button>
         <AbilityButtons />
         <PotionButton />
@@ -191,7 +192,7 @@ function AbilityButtons() {
             }}
             aria-label={abilityName(cls, slot)}
           >
-            <span className="ab-letter">{slot === 'F' ? '★' : slot}</span>
+            <Icon name={`${cls}-${slot}`} size={52} className="ab-icon" />
             {!st.ready && slot !== 'F' && st.seconds > 0 && <span className="ab-cd">{st.seconds}</span>}
           </button>
         );
@@ -214,7 +215,7 @@ function PotionButton() {
       }}
       aria-label="Pozione"
     >
-      🧪
+      <Icon name="pozione" size={42} />
     </button>
   );
 }

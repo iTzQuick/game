@@ -60,8 +60,9 @@ async function openPlayer(context, name, { code, quality = 'bassa', extra = {} }
   await page.addInitScript((q) => {
     localStorage.setItem('fratture.settings', JSON.stringify({ quality: q, touch: 'off' }));
   }, quality);
-  // Senza scheda video, tante finestre con i modelli 3D scendono a 2-4 fotogrammi
-  // al secondo: quasi tutte usano le forme semplici, una sola carica i modelli.
+  // Senza scheda video, le finestre con i modelli 3D scendono a pochi fotogrammi al
+  // secondo e si bloccano mentre li preparano: qui si usano le forme semplici, e i
+  // modelli si provano a parte, in una finestra sola (modelsTest).
   const q = new URLSearchParams({ rete: 'locale', modelli: '0', ...extra });
   if (code) q.set('stanza', code);
   await page.goto(`${BASE}?${q}`);
@@ -199,7 +200,10 @@ async function fratturaTests(browser) {
   const wiped = await Promise.all([A, B, C].map((p) => waitFor(p, (w) => window.__fratture.getGame().room.run?.wipes > w, wipes0, 10000)));
   await sleep(800);
   const afterWipe = await Promise.all([A, B, C].map((p) => g(p, () => ({ alive: window.__fratture.combat.alive, hp: window.__fratture.combat.me.hp, max: window.__fratture.combat.me.maxHp }))));
-  check(wiped.every(Boolean) && afterWipe.every((v) => v.alive && v.hp === v.max), 'cadono tutti: si riparte dal checkpoint con la vita piena');
+  check(
+    wiped.every(Boolean) && afterWipe.every((v) => v.alive && v.hp === v.max),
+    `cadono tutti: si riparte dal checkpoint con la vita piena${wiped.every(Boolean) && afterWipe.every((v) => v.alive && v.hp === v.max) ? '' : ` (${JSON.stringify({ wiped, afterWipe })})`}`,
+  );
 
   // l'host esce a metà combattimento: la regia passa al successivo, nemici compresi
   await enterRoom(A, 1);
@@ -325,6 +329,35 @@ async function fratturaTests(browser) {
   await ctx2.close();
 }
 
+// ---------------- Grafica: modelli 3D, texture, icone ----------------
+
+async function modelsTest(browser) {
+  const ctx = await browser.newContext();
+  const G = await openPlayer(ctx, 'Gaia', { quality: 'media', extra: { modelli: '1' } });
+  await waitJoined(G);
+  await G.click('.class-card:has-text("Custode")');
+  await G.keyboard.press('Escape');
+  const want = ['portale-citta-sommersa.glb', 'custode-muto.glb', 'colonna.glb', 'piedistallo.glb', 'custode.glb', 'bastone.glb'];
+  const loaded = () => new Set(modelLoads.filter((m) => m.name === 'Gaia' && m.status === 200).map((m) => m.file));
+  for (let i = 0; i < 60 && !want.every((f) => loaded().has(f)); i++) await sleep(500);
+  // nella Frattura arrivano i nemici
+  await g(G, () => window.__fratture.runRequest('start'));
+  await waitFor(G, () => window.__fratture.getGame().room.run?.phase === 'active', null, 15000);
+  await enterRoom(G, 1);
+  await waitFor(G, () => window.__fratture.combat.enemies.size > 0, null, 15000);
+  for (let i = 0; i < 40 && ![...loaded()].some((f) => ['ombra.glb', 'sciame.glb', 'riflesso.glb', 'velato.glb', 'bruto.glb'].includes(f)); i++) await sleep(500);
+  await G.setViewportSize({ width: 1280, height: 720 });
+  await sleep(1500);
+  await G.screenshot({ path: `${SHOTS}/grafica-frattura.png` });
+  const got = loaded();
+  const bad = modelLoads.filter((m) => m.status !== 200 && m.status !== 304);
+  check(want.every((f) => got.has(f)) && bad.length === 0, `i modelli 3D si caricano (${[...got].join(', ') || 'nessuno'})`);
+  check([...got].some((f) => ['ombra.glb', 'sciame.glb', 'riflesso.glb', 'velato.glb', 'bruto.glb'].includes(f)), 'nella Frattura arrivano i modelli dei nemici');
+  const tex = await g(G, () => performance.getEntriesByType('resource').filter((r) => /textures\/|ui\/icone\//.test(r.name)).length);
+  check(tex >= 5, `texture e icone dipinte caricate (${tex} file)`);
+  await ctx.close();
+}
+
 async function main() {
   const server = await startServer();
   const browser = await chromium.launch({
@@ -339,7 +372,7 @@ async function main() {
     check(/^[A-Z2-9]{4}$/.test(sa.code), `stanza creata con codice ${sa.code}`);
     check(sa.hostId === sa.selfId, 'chi crea la partita è l’host');
 
-    const B = await openPlayer(ctx, 'Bruno', { code: sa.code, quality: 'media', extra: { modelli: '1' } });
+    const B = await openPlayer(ctx, 'Bruno', { code: sa.code, quality: 'media' });
     const C = await openPlayer(ctx, 'Cleo', { code: sa.code });
     const D = await openPlayer(ctx, 'Dario', { code: sa.code });
     await Promise.all([B, C, D].map(waitJoined));
@@ -490,14 +523,12 @@ async function main() {
     await ctx2.close();
 
     await fratturaTests(browser);
+    await modelsTest(browser);
   } finally {
     await browser.close();
     server.kill();
   }
 
-  const okModels = new Set(modelLoads.filter((m) => m.status === 200).map((m) => m.file));
-  const badModels = modelLoads.filter((m) => m.status !== 200 && m.status !== 304);
-  check(okModels.has('portale.glb') && badModels.length === 0, `i modelli 3D si caricano (${[...okModels].join(', ') || 'nessuno'})`);
   const relevant = errors.filter((e) => !/favicon|WebGL|GPU stall|ReadPixels/i.test(e));
   check(relevant.length === 0, `nessun errore JavaScript${relevant.length ? ':\n  ' + relevant.join('\n  ') : ''}`);
   console.log(failures ? `\n${failures} controlli falliti` : '\nTutti i controlli superati');

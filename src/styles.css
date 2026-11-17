@@ -1627,3 +1627,82 @@ table.controls th.hl {
     max-height: 30vh;
   }
 }
+
+/* ---------- Grafica dipinta (Higgsfield): icone, logo, sfondo del menu ---------- */
+
+.icon-img {
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+  pointer-events: none;
+  user-select: none;
+}
+.menu {
+  background-color: var(--bg);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+.title .logo {
+  display: block;
+  width: 100%;
+  max-width: 380px;
+  height: auto;
+  margin: -6px auto 0;
+  filter: drop-shadow(0 4px 18px rgba(125, 77, 255, 0.45));
+}
+.menu-card {
+  background: rgba(16, 11, 30, 0.78);
+}
+/* abilità (computer): icona sopra, nome sotto, tasto nell'angolo */
+.ability .ab-icon {
+  width: 32px;
+  height: 32px;
+}
+.ability kbd {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  z-index: 1;
+}
+/* abilità (telefono): l'icona riempie il pulsante, la ricarica ci scende sopra */
+.tbtn.ab .ab-icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.tbtn.ab::after {
+  z-index: 1;
+}
+.tbtn.ab .ab-cd {
+  z-index: 2;
+}
+.tbtn.attack,
+.tbtn.dodge,
+.tbtn.potion {
+  overflow: hidden;
+}
+.tbtn.attack .icon-img,
+.tbtn.dodge .icon-img,
+.tbtn.potion .icon-img {
+  width: 92%;
+  height: 92%;
+}
+.cls-dot .icon-img {
+  width: 100%;
+  height: 100%;
+}
+.item-tile .it-icon {
+  width: 28px;
+  height: 28px;
+}
+.building-desc {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.altar-label .icon-img,
+.nametag-label .icon-img {
+  margin-right: 2px;
+}

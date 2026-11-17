@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { CLASSES, CLASS_IDS, type ClassId } from '../game/constants';
 import { setGame, useGame } from '../game/store';
+import { Icon } from './Icon';
 import { CLASS_STATS } from '../combat/defs';
 import {
   BUILDINGS,
@@ -86,7 +87,7 @@ function CharacterPanel() {
       <div className="tabs">
         {CLASS_IDS.map((c) => (
           <button key={c} className={c === cls ? 'on' : ''} style={{ '--cls': CLASSES[c].color } as React.CSSProperties} onClick={() => setCls(c)}>
-            {CLASSES[c].icon} {CLASSES[c].name} <small>liv. {classProgress(save, c).level}</small>
+            <Icon name={`classe-${c}`} size={20} /> {CLASSES[c].name} <small>liv. {classProgress(save, c).level}</small>
           </button>
         ))}
       </div>
@@ -160,13 +161,12 @@ function CharacterPanel() {
 
 // --- zaino e forgia ---------------------------------------------------------------------------
 
-const SLOT_ICON: Record<string, string> = { arma: '⚔', armatura: '🛡', amuleto: '✦' };
 
 function ItemTile({ item, selected, onClick, equipped }: { item: Item; selected: boolean; onClick: () => void; equipped: boolean }) {
   const r = RARITIES[item.rarity];
   return (
     <button className={`item-tile${selected ? ' sel' : ''}`} style={{ '--rar': r.color } as React.CSSProperties} onClick={onClick} title={item.name}>
-      <span className="it-icon">{SLOT_ICON[item.slot]}</span>
+      <Icon name={`slot-${item.slot}`} size={28} className="it-icon" />
       <span className="it-name">{item.name}</span>
       <span className="it-meta">
         liv. {item.ilvl}
@@ -191,7 +191,7 @@ function InventoryPanel() {
     <Modal title="Zaino" wide>
       <div className="inv-head">
         <span>
-          Frammenti: <b className="frags">{save.fragments}</b>
+          <Icon name="frammenti" size={20} /> Frammenti: <b className="frags">{save.fragments}</b>
         </span>
         <span className="muted small-text">
           {save.inventory.length}/40 oggetti ·{' '}
@@ -299,7 +299,10 @@ function BasePanel() {
 
   return (
     <Modal title={def.name}>
-      <p className="muted">{def.desc}</p>
+      <p className="muted building-desc">
+        <Icon name={def.id} size={48} />
+        {def.desc}
+      </p>
       {def.later ? (
         <p>Non si può ancora costruire: {def.later}.</p>
       ) : !built ? (

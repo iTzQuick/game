@@ -246,7 +246,20 @@ ondeggia e si getta in avanti grazie al codice di `EnemyMesh`. I Velati sotto il
 rendono trasparente il loro modello. Per i nemici, `attackSpeed` fa cadere il colpo
 dell'animazione alla fine del preavviso rosso a terra.
 
-Con `?modelli=0` nell'indirizzo si gioca con le forme semplici (dispositivi molto
+Oltre a eroi e nemici, da Higgsfield arrivano anche:
+
+- **oggetti 3D senza scheletro** (`props` in `models.tsx`): statua del Custode Muto,
+  colonne, piedistalli delle classi, gli edifici della base, un portale per ogni mondo
+  e le armi degli eroi. Ognuno ha accanto la sua versione di forme semplici (`PropOr`),
+  usata finché il modello non arriva o se non si carica;
+- **texture dipinte** in `public/textures` (pavimento e roccia dell'isola, pavimento e
+  muri della Frattura, cielo, luna). `scripts/models/tile.mjs` le rende ripetibili senza
+  cuciture; `src/world/textures.ts` le proietta in coordinate del mondo, così vanno bene
+  su forme di qualsiasi misura senza stirarsi;
+- **interfaccia** in `public/ui`: logo, sfondo del menu e 32 icone (abilità, classi,
+  oggetti, edifici), ritagliate da due fogli 4×4 (`src/ui/Icon.tsx`).
+
+Con `?modelli=0` nell'indirizzo si gioca con le forme semplici e la pietra a tinta unita (dispositivi molto
 deboli). Il test end-to-end lo usa in tutte le finestre tranne una, perché senza
 scheda video tante finestre con i modelli scendono a pochi fotogrammi al secondo.
 

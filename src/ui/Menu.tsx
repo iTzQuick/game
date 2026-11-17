@@ -48,10 +48,16 @@ export function Menu() {
   };
 
   return (
-    <div className="menu">
+    <div
+      className="menu"
+      style={{
+        // sfondo dipinto; l'indirizzo va scritto qui (nel CSS sarebbe relativo alla cartella del CSS)
+        backgroundImage: `linear-gradient(180deg, rgba(7, 6, 13, 0.25), rgba(7, 6, 13, 0.7)), url(${import.meta.env.BASE_URL}ui/menu.webp)`,
+      }}
+    >
       <div className="menu-card">
         <h1 className="title">
-          Le <span>Fratture</span>
+          <img className="logo" src={`${import.meta.env.BASE_URL}ui/logo.webp`} alt="Le Fratture" width={1000} height={261} />
         </h1>
         <p className="tagline">I portali si sono spezzati. Vi siete svegliati al Crocevia, con un segno luminoso sul polso.</p>
 
