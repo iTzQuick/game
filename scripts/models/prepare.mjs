@@ -6,6 +6,8 @@
 //
 // Uso:
 //   node scripts/models/prepare.mjs out.glb base.glb:idle [run.glb:run ...] [--texture 1024]
+//   node scripts/models/prepare.mjs out.glb pronto.glb nuovo.glb:attack2@0.4-1.2 --tieni   (aggiunge clip)
+//   --sul-posto: i clip aggiunti restano sul posto (niente spostamento dei fianchi in avanti)
 //
 // Il file base dà mesh, materiali e scheletro; il suo primo clip prende il nome indicato.
 // Un clip si può ritagliare indicando inizio e fine in secondi: attack.glb:attack@0.7-1.5
@@ -26,6 +28,13 @@ const opt = (name, def) => {
   return v;
 };
 const textureSize = Number(opt('texture', '1024'));
+// --tieni: il file base è un modello già pronto; si tengono i suoi clip e se ne aggiungono altri
+const keepBase = args.includes('--tieni');
+if (keepBase) args.splice(args.indexOf('--tieni'), 1);
+// --sul-posto: i clip aggiunti non spostano il personaggio in avanti o di lato (i fianchi restano
+// dove partono); il movimento lo fa il gioco. Resta solo il su e giù.
+const inPlace = args.includes('--sul-posto');
+if (inPlace) args.splice(args.indexOf('--sul-posto'), 1);
 const [out, baseSpec, ...extra] = args;
 if (!out || !baseSpec) {
   console.error('uso: prepare.mjs out.glb base.glb:clip [altro.glb:clip ...] [--texture 1024]');
@@ -75,8 +84,10 @@ const root = doc.getRoot();
 const buffer = root.listBuffers()[0] ?? doc.createBuffer();
 
 const anims = root.listAnimations();
-if (baseClip && anims[0]) anims[0].setName(baseClip);
-for (const a of anims.slice(1)) a.dispose(); // un clip per file: teniamo solo il primo
+if (!keepBase) {
+  if (baseClip && anims[0]) anims[0].setName(baseClip);
+  for (const a of anims.slice(1)) a.dispose(); // un clip per file: teniamo solo il primo
+}
 
 const nodesByName = new Map(root.listNodes().map((n) => [n.getName(), n]));
 
@@ -98,6 +109,15 @@ for (const spec of extra) {
     let input = s.getInput().getArray().slice();
     let output = s.getOutput().getArray().slice();
     if (trim) [input, output] = trimArrays(input, output, trim[0], trim[1]);
+    if (inPlace && target.getName() === 'Hips' && ch.getTargetPath() === 'translation') {
+      // i fianchi restano dove sono nella posa di riposo del modello (non dove parte il clip,
+      // che a volte comincia già spostato)
+      const [rx, , rz] = node.getTranslation();
+      for (let k = 0; k < input.length; k++) {
+        output[k * 3] = rx;
+        output[k * 3 + 2] = rz;
+      }
+    }
     const acc = (array, like) => doc.createAccessor().setType(like.getType()).setArray(array).setNormalized(like.getNormalized()).setBuffer(buffer);
     const sampler = doc
       .createAnimationSampler()

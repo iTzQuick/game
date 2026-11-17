@@ -319,6 +319,14 @@ Oltre a eroi e nemici, da Higgsfield arrivano anche:
 - **interfaccia** in `public/ui`: logo, sfondo del menu e 32 icone (abilità, classi,
   oggetti, edifici), ritagliate da due fogli 4×4 (`src/ui/Icon.tsx`).
 
+**Animazioni degli eroi:** oltre a ferma, corsa, attacco e a terra, ogni eroe ha il 2° e 3°
+colpo della combo (Guardiano e Lama), un'animazione per le abilità principali e una vera
+capriola per la schivata (18 clip Meshy, 144 crediti). Si aggiungono a un modello già pronto
+con `prepare.mjs ... --tieni --sul-posto` (`--sul-posto` blocca i fianchi nella posa di
+riposo: lo spostamento lo fa il gioco). Attaccando in corsa il gioco usa solo la parte alta
+del clip d'attacco e le gambe continuano a correre; in più ogni colpo e abilità ha un
+movimento del corpo (`src/player/moves.ts`).
+
 Se un'animazione esce storta su un solo osso (es. la testa girata all'indietro), si
 trova con `scripts/models/confronta-clip.mjs` (confronto con un altro eroe che usa lo
 stesso clip) e si corregge con `scripts/models/copia-osso.mjs`, che copia il movimento

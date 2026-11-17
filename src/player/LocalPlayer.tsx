@@ -199,9 +199,10 @@ export function LocalPlayer() {
         ctx.x = x;
         ctx.z = z;
       },
-      attackAnim: (n: number, style?: MoveStyle) => {
+      attackAnim: (n: number, style?: MoveStyle, slot?: AbilitySlot) => {
         pose.attackT = 0;
         pose.attackN = n;
+        pose.attackSlot = slot ?? null;
         const cls = getGame().room.classes[getGame().selfId];
         pose.attackStyle = style ?? (cls && CLASSES[cls].ranged ? 'shoot' : 'swing');
       },

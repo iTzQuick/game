@@ -196,7 +196,15 @@ async function fratturaTests(browser) {
 
   // sconfitta di gruppo: tutti a terra → checkpoint
   const wipes0 = (await runOf(A)).wipes;
-  for (const p of [A, B, C]) await g(p, () => window.__fratture.combat.damageMe(99999, performance.now()));
+  // chi è appena stato rialzato ha 1,5 s di invulnerabilità (voluta): qui la togliamo, altrimenti
+  // resta in piedi e rialza gli altri, e la sconfitta di gruppo non arriva mai
+  for (const p of [A, B, C]) {
+    await g(p, () => {
+      const c = window.__fratture.combat;
+      c.me.invulnUntil = 0;
+      c.damageMe(99999, performance.now());
+    });
+  }
   const wiped = await Promise.all([A, B, C].map((p) => waitFor(p, (w) => window.__fratture.getGame().room.run?.wipes > w, wipes0, 10000)));
   await sleep(800);
   const afterWipe = await Promise.all([A, B, C].map((p) => g(p, () => ({ alive: window.__fratture.combat.alive, hp: window.__fratture.combat.me.hp, max: window.__fratture.combat.me.maxHp }))));

@@ -10,6 +10,7 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 import type { ClassId } from '../game/constants';
 import type { EnemyType } from '../combat/defs';
 import { MOVE_DURATION, bodyOffset, dodgeOffset, type MoveStyle } from './moves';
+import type { AbilitySlot } from '../combat/protocol';
 
 export type Move = 'idle' | 'run' | 'down';
 
@@ -20,7 +21,9 @@ export interface ModelDef {
   /** rotazione per far guardare il modello verso +Z */
   yaw?: number;
   /** nomi dei clip nel file */
-  clips: Partial<Record<'idle' | 'run' | 'attack' | 'down', string>>;
+  clips: Partial<Record<ClipKey, string>>;
+  /** velocità dei clip d'attacco diversi da `attack` (altrimenti attackSpeed) */
+  speeds?: Partial<Record<AttackKey, number>>;
   /** velocità (m/s) a cui il clip di corsa sembra giusto */
   runSpeed?: number;
   /** velocità del clip d'attacco (già ritagliato attorno al colpo) */
@@ -65,13 +68,21 @@ export interface ModelCtrl {
   /** movimento del corpo dell'ultimo attacco e numero del colpo nella combo */
   style: MoveStyle;
   combo: number;
+  /** abilità usata (sceglie la sua animazione, se il modello ce l'ha) */
+  slot: AbilitySlot | null;
 }
 
-export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0, opacity: 1, style: 'swing', combo: 1 });
+export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0, opacity: 1, style: 'swing', combo: 1, slot: null });
 
 const url = (file: string) => `${import.meta.env.BASE_URL}models/${file}`;
 
-type ActionKey = 'idle' | 'run' | 'attack' | 'down' | 'attackUpper' | 'runLower';
+/** Clip d'attacco: il colpo base (1°, 2°, 3° della combo) e uno per abilità. */
+export type AttackKey = 'attack' | 'attack2' | 'attack3' | 'abQ' | 'abE' | 'abR' | 'abF';
+const ATTACK_KEYS: AttackKey[] = ['attack', 'attack2', 'attack3', 'abQ', 'abE', 'abR', 'abF'];
+export type ClipKey = 'idle' | 'run' | 'down' | 'dodge' | AttackKey;
+type ActionKey = ClipKey | 'runLower';
+/** Quanto dura la capriola disegnata (s): un po' più della schivata vera, così si vede tutta. */
+const DODGE_ANIM = 0.5;
 /** Ossa della parte alta (scheletro Meshy): busto, collo, testa, spalle e braccia. */
 const UPPER_BODY = /Spine|neck|Neck|Head|Shoulder|Arm|Hand/;
 
@@ -139,7 +150,7 @@ function fit(object: THREE.Object3D, height: number, maxWidth?: number) {
 export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: ModelCtrl; onReady?: () => void }) {
   const gltf = useGLTF(def.url);
   modelStatus.ready.add(fileOf(def.url));
-  const { scene, mats, mixer, actions, place, anchors } = useMemo(() => {
+  const { scene, mats, mixer, actions, uppers, place, anchors } = useMemo(() => {
     const scene = cloneSkinned(gltf.scene) as THREE.Object3D;
     const mats: THREE.MeshStandardMaterial[] = [];
     scene.traverse((o) => {
@@ -158,6 +169,8 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     });
     const mixer = new THREE.AnimationMixer(scene);
     const actions: Partial<Record<ActionKey, THREE.AnimationAction>> = {};
+    /** versione "solo busto" dei clip d'attacco, per attaccare correndo */
+    const uppers: Partial<Record<AttackKey, THREE.AnimationAction>> = {};
     const once = (a: THREE.AnimationAction) => {
       a.setLoop(THREE.LoopOnce, 1);
       a.clampWhenFinished = true;
@@ -167,20 +180,22 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       const clip = gltf.animations.find((a) => a.name === name);
       if (!clip) continue;
       const a = mixer.clipAction(clip);
-      if (key === 'attack' || key === 'down') once(a);
+      if (key !== 'idle' && key !== 'run') once(a);
       actions[key as ActionKey] = a;
     }
     // attacco in corsa: le gambe continuano a correre e il busto colpisce
-    // (due clip senza ossa in comune, così ognuna muove le sue al 100%)
-    const atk = actions.attack?.getClip();
+    // (clip senza ossa in comune, così ognuna muove le sue al 100%)
     const run = actions.run?.getClip();
-    if (atk && run) {
+    if (run) {
       const upper = (t: THREE.KeyframeTrack) => UPPER_BODY.test(t.name.split('.')[0]);
-      actions.attackUpper = once(mixer.clipAction(new THREE.AnimationClip('attackUpper', atk.duration, atk.tracks.filter(upper))));
       actions.runLower = mixer.clipAction(new THREE.AnimationClip('runLower', run.duration, run.tracks.filter((t) => !upper(t))));
+      for (const k of ATTACK_KEYS) {
+        const c = actions[k]?.getClip();
+        if (c) uppers[k] = once(mixer.clipAction(new THREE.AnimationClip(`${k}Upper`, c.duration, c.tracks.filter(upper))));
+      }
     }
     const place = fit(gltf.scene, def.height);
-    return { scene, mats, mixer, actions, place, anchors: anchorGear(scene, def.gear ?? [], place.scale) };
+    return { scene, mats, mixer, actions, uppers, place, anchors: anchorGear(scene, def.gear ?? [], place.scale) };
   }, [gltf, def]);
 
   const roll = useRef<THREE.Group>(null);
@@ -190,6 +205,9 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     attack: 0,
     attackUntil: 0,
     attackStart: 0,
+    atkKey: 'attack' as AttackKey,
+    dodgeUntil: 0,
+    wasRolling: false,
     style: 'swing' as MoveStyle,
     combo: 1,
     opacity: 1,
@@ -216,31 +234,47 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       st.attackStart = now;
       st.style = ctrl.style;
       st.combo = ctrl.combo;
-      const speed = def.attackSpeed ?? 1.6; // i clip della libreria sono lenti per un gioco d'azione
-      for (const a of [actions.attack, actions.attackUpper]) {
+      // l'animazione dell'abilità, o del 2°/3° colpo della combo, se il modello ce l'ha
+      const abKey = ctrl.slot ? (`ab${ctrl.slot}` as AttackKey) : null;
+      st.atkKey = abKey && actions[abKey] ? abKey : ctrl.combo === 2 && actions.attack2 ? 'attack2' : ctrl.combo === 3 && actions.attack3 ? 'attack3' : 'attack';
+      const speed = (st.atkKey !== 'attack' ? def.speeds?.[st.atkKey] : undefined) ?? def.attackSpeed ?? 1.6; // i clip della libreria sono lenti
+      for (const a of [actions[st.atkKey], uppers[st.atkKey]]) {
         if (!a) continue;
         a.reset();
         a.timeScale = speed;
         if (st.active.has(a)) a.setEffectiveWeight(1);
       }
-      st.attackUntil = now + (actions.attack.getClip().duration / speed) * 1000 * 0.9;
+      st.attackUntil = now + (actions[st.atkKey]!.getClip().duration / speed) * 1000 * 0.9;
     }
+    // la capriola dura un po' più della schivata vera
+    const rolling = ctrl.roll >= 0;
+    if (rolling && !st.wasRolling && actions.dodge) {
+      st.dodgeUntil = now + DODGE_ANIM * 1000;
+      actions.dodge.reset();
+      actions.dodge.timeScale = actions.dodge.getClip().duration / DODGE_ANIM;
+      if (st.active.has(actions.dodge)) actions.dodge.setEffectiveWeight(1);
+    }
+    st.wasRolling = rolling;
     const attacking = now < st.attackUntil && !!actions.attack;
     const moving = ctrl.move === 'run' && !!actions.run;
+    const atkFull = actions[st.atkKey];
+    const atkUpper = uppers[st.atkKey];
     let want: (THREE.AnimationAction | undefined)[];
     if (ctrl.move === 'down' && actions.down) want = [actions.down];
-    else if (attacking && moving && actions.attackUpper && actions.runLower) want = [actions.runLower, actions.attackUpper];
-    else if (attacking) want = [actions.attack];
+    else if (actions.dodge && now < st.dodgeUntil) want = [actions.dodge];
+    else if (attacking && moving && atkUpper && actions.runLower) want = [actions.runLower, atkUpper];
+    else if (attacking) want = [atkFull];
     else if (moving) want = [actions.run];
     else want = [actions.idle ?? actions.run];
 
     // dissolvenze tra i clip; le gambe non saltano passando tra corsa intera e corsa "solo gambe"
-    for (const a of Object.values(actions)) {
+    for (const a of [...Object.values(actions), ...Object.values(uppers)]) {
       if (!a) continue;
       const on = want.includes(a);
       if (on && !st.active.has(a)) {
         const keepTime = a === actions.runLower ? actions.run : a === actions.run ? actions.runLower : null;
-        const isAttack = a === actions.attack || a === actions.attackUpper;
+        // attacchi e capriola sono già stati riavvolti quando sono partiti: qui non si ricomincia da capo
+        const isAttack = a === actions.dodge || ATTACK_KEYS.some((k) => a === actions[k] || a === uppers[k]);
         if (!isAttack) a.reset();
         else {
           a.enabled = true;
@@ -267,8 +301,11 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     // movimenti del corpo: attacchi e abilità diversi, e la schivata come scatto basso
     if (act.current) {
       const g = act.current;
-      const o = def.moves && st.attackStart ? bodyOffset(st.style, st.combo, (now - st.attackStart) / 1000 / MOVE_DURATION[st.style]) : null;
-      const d = ctrl.roll >= 0 ? dodgeOffset(ctrl.roll) : null;
+      let o = def.moves && st.attackStart ? bodyOffset(st.style, st.combo, (now - st.attackStart) / 1000 / MOVE_DURATION[st.style]) : null;
+      // con un'animazione apposta (giravolte, salti) il movimento del corpo resta, ma più leggero
+      if (o && st.atkKey !== 'attack') o = { rx: o.rx * 0.35, ry: 0, y: o.y * 0.5, z: o.z * 0.5, s: 1 + (o.s - 1) * 0.5 };
+      // con la capriola vera il corpo non si china in più
+      const d = ctrl.roll >= 0 && !actions.dodge ? dodgeOffset(ctrl.roll) : null;
       g.rotation.set((o?.rx ?? 0) + (d?.rx ?? 0), o?.ry ?? 0, 0);
       g.position.set(0, (o?.y ?? 0) + (d?.y ?? 0), o?.z ?? 0);
       g.scale.setScalar((o?.s ?? 1) * (d?.s ?? 1));

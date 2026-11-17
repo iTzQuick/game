@@ -16,6 +16,7 @@ import { NEUTRAL, SKIN, toon } from './materials';
 import { HERO_MODELS, newCtrl } from './RiggedModel';
 import { ModelOr } from './models';
 import type { MoveStyle } from './moves';
+import type { AbilitySlot } from '../combat/protocol';
 import { Icon } from '../ui/Icon';
 
 export interface Pose {
@@ -26,6 +27,8 @@ export interface Pose {
   attackN: number;
   /** movimento del corpo per questo attacco o abilità (player/moves.ts) */
   attackStyle: MoveStyle;
+  /** abilità usata (per la sua animazione), null per l'attacco base */
+  attackSlot: AbilitySlot | null;
   dodgeT: number;
   waveT: number;
   phase: number;
@@ -33,7 +36,7 @@ export interface Pose {
   flags: number;
 }
 
-export const newPose = (): Pose => ({ speed: 0, anim: 'idle', attackT: -1, attackN: 1, attackStyle: 'swing', dodgeT: -1, waveT: -1, phase: 0, flags: 0 });
+export const newPose = (): Pose => ({ speed: 0, anim: 'idle', attackT: -1, attackN: 1, attackStyle: 'swing', attackSlot: null, dodgeT: -1, waveT: -1, phase: 0, flags: 0 });
 
 /** Avanza i timer della posa. */
 export function tickPose(p: Pose, dt: number) {
@@ -141,6 +144,7 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
     if (p.attackT >= 0 && (prevAttack.current < 0 || p.attackT < prevAttack.current)) {
       ctrl.style = p.attackStyle;
       ctrl.combo = p.attackN;
+      ctrl.slot = p.attackSlot;
       ctrl.attack++;
     }
     prevAttack.current = p.attackT;
