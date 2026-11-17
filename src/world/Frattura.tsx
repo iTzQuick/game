@@ -260,14 +260,16 @@ function CampanileShape() {
 }
 
 const BUBBLE_GEO = new THREE.SphereGeometry(1, 8, 6);
-const BUBBLE_MAT = new THREE.MeshBasicMaterial({ color: '#c9fbff', transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
+const BUBBLE_MAT = new THREE.MeshBasicMaterial({ color: '#bff8ff', transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending });
 const POOL_MAT = new THREE.MeshBasicMaterial({ color: '#7ff6ff', transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+/** la colonna d'acqua chiara: si vede da lontano senza coprire la scena */
+const SHAFT_MAT = new THREE.MeshBasicMaterial({ color: '#3fd8e0', transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
 
 /** Una colonna di bolle: dove si riprende fiato. */
 function BubbleColumn({ c, quality }: { c: Colonna; quality: Quality }) {
   const n = quality === 'bassa' ? 7 : 16;
   const refs = useRef<(THREE.Mesh | null)[]>([]);
-  const seeds = useMemo(() => Array.from({ length: n }, (_, i) => ({ p: (i * 0.618) % 1, a: i * 2.4, s: 0.06 + ((i * 37) % 10) / 100 })), [n]);
+  const seeds = useMemo(() => Array.from({ length: n }, (_, i) => ({ p: (i * 0.618) % 1, a: i * 2.4, s: 0.035 + ((i * 37) % 10) / 220 })), [n]);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
     seeds.forEach((b, i) => {
@@ -284,8 +286,8 @@ function BubbleColumn({ c, quality }: { c: Colonna; quality: Quality }) {
       <mesh material={POOL_MAT} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.07, 0]}>
         <ringGeometry args={[OSSIGENO.raggio * 0.75, OSSIGENO.raggio, 32]} />
       </mesh>
-      <mesh material={POOL_MAT} position={[0, 2.8, 0]}>
-        <cylinderGeometry args={[OSSIGENO.raggio * 0.5, OSSIGENO.raggio * 0.8, 5.6, 16, 1, true]} />
+      <mesh material={SHAFT_MAT} position={[0, 2.8, 0]}>
+        <cylinderGeometry args={[OSSIGENO.raggio * 0.45, OSSIGENO.raggio * 0.75, 5.6, 16, 1, true]} />
       </mesh>
       {seeds.map((_, i) => (
         <mesh key={i} ref={(m) => {

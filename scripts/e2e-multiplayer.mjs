@@ -472,6 +472,159 @@ async function missionsTest(browser) {
   await ctx.close();
 }
 
+// ---------------- Città Sommersa: Atto I, ossigeno, La Campana, voto ----------------
+
+async function cittaTest(browser) {
+  const ctx = await browser.newContext();
+  const A = await openPlayer(ctx, 'Ada');
+  await waitJoined(A);
+  const code = (await state(A)).code;
+  const B = await openPlayer(ctx, 'Bruno', { code });
+  await waitJoined(B);
+  await Promise.all([A, B].map((p) => waitMembers(p, 2)));
+  await A.click('.class-card:has-text("Guardiano")');
+  await B.click('.class-card:has-text("Custode")');
+  await Promise.all([A, B].map((p) => p.waitForFunction(() => Object.keys(window.__fratture.getGame().room.classes).length === 2, null, { timeout: 8000 })));
+  for (const p of [A, B]) await p.keyboard.press('Escape');
+  await waitFor(B, () => typeof window.__fratture.local?.teleport === 'function', null, 15000);
+
+  // portale spento finché la compagnia non ha richiuso una Frattura
+  await g(B, () => window.__fratture.local.teleport(0, 14.5));
+  await sleep(400);
+  await B.keyboard.press('g');
+  const closed = await waitFor(B, () => (window.__fratture.getGame().dialog?.lines ?? []).join(' ').includes('prima Frattura'), null, 4000);
+  check(closed, 'il portale della Città Sommersa è spento prima della prima Frattura');
+  await g(B, () => window.__fratture.store.setState({ dialog: null }));
+  await waitFor(A, () => !!window.__fratture.groupKeeper.debug.data, null, 8000);
+  await g(A, () => {
+    window.__fratture.getRoom().updateRoom((s) => ({ ...s, gstats: { ...(s.gstats ?? { bosses: 0, kills: 0 }), fratture: 1 } }));
+  });
+  await waitFor(B, () => window.__fratture.getGame().room.gstats.fratture >= 1, null, 5000);
+  await sleep(300);
+  await B.keyboard.press('g');
+  await B.waitForSelector('.mission', { timeout: 4000 }).catch(() => {});
+  const cards = await B.locator('.mission').count();
+  const locked = await B.locator('.mission.locked').count();
+  check(cards === 5 && locked === 4, `dal portale acceso si apre l’Atto I: ${cards} missioni, ${locked} ancora chiuse`);
+  await B.setViewportSize({ width: 1280, height: 720 });
+  await sleep(300);
+  await B.screenshot({ path: `${SHOTS}/citta-atto1.png` });
+  await B.setViewportSize({ width: 480, height: 270 });
+  await B.click('.mission[data-mission="atto1-1"] button:has-text("Parti")');
+  const inCitta = await waitFor(A, () => window.__fratture.getGame().room.run?.mondo === 'citta-sommersa', null, 6000);
+  check(inCitta, 'la prima missione apre una Frattura nella Città Sommersa');
+  await Promise.all([A, B].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
+  await sleep(600);
+
+  // ossigeno: cala lontano dalle bolle, si riprende dentro una colonna
+  const colonna = await g(B, () => {
+    const c = window.__fratture.combat;
+    const r = c.dungeon.rooms[1];
+    const col = c.colonne.find((x) => x.room === 1);
+    window.__fratture.local.teleport(r.doorSouthX ?? r.cx, r.rect.z1 - 2);
+    return col;
+  });
+  await sleep(2500);
+  const low = await g(B, () => window.__fratture.combat.me.oxygen);
+  check(low < 99, `lontano dalle bolle l’ossigeno cala (${Math.round(low)})`);
+  await B.waitForSelector('.oxygen-bar', { timeout: 3000 }).then(
+    () => check(true, 'la barra dell’ossigeno è visibile nella Città'),
+    () => check(false, 'la barra dell’ossigeno è visibile nella Città'),
+  );
+  if (colonna) {
+    await g(B, () => window.__fratture.combat.me.oxygen = 30);
+    await g(B, (c) => window.__fratture.local.teleport(c.x, c.z), colonna);
+    const refill = await waitFor(B, () => window.__fratture.combat.me.oxygen > 60, null, 4000);
+    check(refill, 'in una colonna di bolle l’ossigeno torna');
+  } else check(false, 'c’è una colonna di bolle nella prima stanza');
+  await g(B, () => window.__fratture.combat.me.oxygen = 0);
+  const hp0 = await g(B, () => window.__fratture.combat.me.hp);
+  await g(B, () => {
+    const r = window.__fratture.combat.dungeon.rooms[1];
+    window.__fratture.local.teleport(r.doorSouthX ?? r.cx, r.rect.z1 - 2);
+  });
+  await sleep(1500);
+  const hp1 = await g(B, () => window.__fratture.combat.me.hp);
+  check(hp1 < hp0, `senza ossigeno si perde vita (${Math.round(hp0)} → ${Math.round(hp1)})`);
+  await g(B, () => (window.__fratture.combat.me.oxygen = 100));
+
+  // nemici della Città
+  await enterRoom(A, 1);
+  await waitFor(A, () => window.__fratture.director.debug.sim?.enemies.size > 0, null, 8000);
+  const types = await g(A, () => [...new Set([...window.__fratture.director.debug.sim.enemies.values()].map((e) => e.type))]);
+  const pool = ['annegato', 'anguilla', 'ombra', 'riflesso', 'sciame'];
+  check(types.length > 0 && types.every((t) => pool.includes(t)) && types.some((t) => t === 'annegato' || t === 'anguilla'), `nella Città arrivano Annegati e Anguille (${types.join(', ')})`);
+  await sleep(400);
+  await B.setViewportSize({ width: 1280, height: 720 });
+  await enterRoom(B, 1);
+  await sleep(1200);
+  await B.screenshot({ path: `${SHOTS}/citta-stanza.png` });
+  await B.setViewportSize({ width: 480, height: 270 });
+
+  // via al boss e vittoria: la storia va avanti, il narratore racconta
+  const winRun = async (bossType) => {
+    await g(A, () => {
+      const d = window.__fratture.director.debug.dungeon;
+      window.__fratture.director.debug.sim?.clear();
+      window.__fratture.getRoom().updateRoom((s) => ({ ...s, run: { ...s.run, cleared: d.rooms.length - 1, fight: -1, wave: 0 } }));
+    });
+    await sleep(500);
+    const last = await g(A, () => window.__fratture.combat.dungeon.rooms.length - 1);
+    await enterRoom(A, last);
+    await enterRoom(B, last);
+    const up = await waitFor(A, (t) => [...window.__fratture.combat.enemies.values()].some((e) => e.type === t), bossType, 8000);
+    for (let i = 0; i < 40; i++) {
+      if ((await runOf(A)).phase === 'complete') break;
+      await strikeAll(A, 700);
+      await sleep(300);
+    }
+    return up && (await waitFor(B, () => window.__fratture.getGame().room.run?.phase === 'complete', null, 6000));
+  };
+  check(await winRun('eco'), 'in fondo alle prime missioni c’è l’Eco, e cade');
+  const advanced = await waitFor(B, () => window.__fratture.getGame().room.atto1.fatte === 1, null, 5000);
+  check(advanced, 'missione compiuta: l’Atto I va avanti per tutti');
+  const told = await waitFor(B, () => (window.__fratture.getGame().dialog?.lines ?? []).join(' ').includes('Strade allagate'), null, 5000);
+  check(told, 'il narratore racconta la fine della missione a chi non è host');
+  await g(B, () => window.__fratture.store.setState({ dialog: null }));
+  await g(A, () => window.__fratture.store.setState({ dialog: null }));
+  await g(A, () => window.__fratture.runRequest('leave'));
+  await Promise.all([A, B].map((p) => waitFor(p, () => window.__fratture.getGame().room.run === null, null, 6000)));
+
+  // l'ultima missione: La Campana, poi il voto
+  await g(A, () => {
+    const f = window.__fratture;
+    f.groupKeeper.debug.data.atto1 = { fatte: 4, scelta: null };
+    f.getRoom().updateRoom((s) => ({ ...s, atto1: { fatte: 4, scelta: null } }));
+  });
+  await waitFor(B, () => window.__fratture.getGame().room.atto1.fatte === 4, null, 5000);
+  await g(B, () => window.__fratture.runRequest('start', 'atto1-5'));
+  await Promise.all([A, B].map((p) => waitFor(p, () => window.__fratture.getGame().room.run?.phase === 'active', null, 12000)));
+  await sleep(500);
+  check((await runOf(A)).boss === 'campana', 'l’ultima missione ha La Campana come boss');
+  check(await winRun('campana'), 'La Campana compare e cade');
+  await g(B, () => window.__fratture.store.setState({ dialog: null }));
+  const voteOpen = await waitFor(B, () => window.__fratture.getGame().room.voto?.aperto === true, null, 6000);
+  await sleep(1600);
+  await g(B, () => window.__fratture.store.setState({ dialog: null }));
+  const panel = await B.waitForSelector('.vote-modal', { timeout: 5000 }).then(
+    () => true,
+    () => false,
+  );
+  check(voteOpen && panel, 'dopo la Campana si apre il voto della compagnia, con il frammento di verità');
+  await B.setViewportSize({ width: 1280, height: 720 });
+  await sleep(300);
+  await B.screenshot({ path: `${SHOTS}/citta-voto.png` });
+  await B.setViewportSize({ width: 480, height: 270 });
+  await B.click('.vote-options button:has-text("Lasciarla al fondo")');
+  await g(A, () => window.__fratture.store.setState({ dialog: null }));
+  await A.waitForSelector('.vote-modal', { timeout: 5000 }).catch(() => {});
+  await A.click('.vote-options button:has-text("Lasciarla al fondo")').catch(() => {});
+  const decided = await waitFor(B, () => window.__fratture.getGame().room.atto1.scelta === 1, null, 6000);
+  const diary = await waitFor(B, () => window.__fratture.getGame().room.diario.some((d) => d.text.includes('ha deciso della Campana')), null, 5000);
+  check(decided && diary, 'votano tutti: la scelta si salva con la compagnia e finisce nel diario');
+  await ctx.close();
+}
+
 // ---------------- Grafica: modelli 3D, texture, icone ----------------
 
 async function modelsTest(browser) {
@@ -667,6 +820,7 @@ async function main() {
 
     await fratturaTests(browser);
     await missionsTest(browser);
+    await cittaTest(browser);
     await modelsTest(browser);
   } finally {
     await browser.close();

@@ -328,8 +328,9 @@ function Portal({
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
     if (lit) {
-      discMat.emissiveIntensity = 0.75 + Math.sin(t * 1.6) * 0.2;
-      crackMat.opacity = 0.9;
+      // acqua che respira dentro l'arco
+      discMat.emissiveIntensity = 0.38 + Math.sin(t * 1.6) * 0.12 + Math.sin(t * 4.3) * 0.04;
+      crackMat.opacity = 0.75 + Math.sin(t * 2.1) * 0.15;
     } else {
       // un respiro debole: il portale è spento, non morto
       discMat.emissiveIntensity = 0.06 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.35;
