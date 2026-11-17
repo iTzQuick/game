@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { CLASSES, CLASS_IDS, type ClassId } from '../game/constants';
 import { setGame, useGame } from '../game/store';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
+import { MissionsPanel } from './MissionsPanel';
 import { CLASS_STATS } from '../combat/defs';
 import {
   BUILDINGS,
@@ -42,29 +44,12 @@ import {
 import { mutate, useProgress } from '../progress/store';
 import { availableFragments, contributeTo } from '../progress/rewards';
 
-const close = () => setGame({ panel: null });
-
-function Modal({ title, children, wide }: { title: string; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className="modal-wrap" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div className={`modal${wide ? ' wide' : ''}`}>
-        <div className="modal-head">
-          <h2>{title}</h2>
-          <button className="small" onClick={close} aria-label="Chiudi">
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 export function ProgressPanels() {
   const panel = useGame((s) => s.panel);
   if (panel === 'personaggio') return <CharacterPanel />;
   if (panel === 'zaino' || panel === 'forgia') return <InventoryPanel />;
   if (panel === 'base') return <BasePanel />;
+  if (panel === 'missioni') return <MissionsPanel />;
   return null;
 }
 
@@ -361,6 +346,7 @@ function BasePanel() {
             <b>{mine.kills}</b>
             <small>sconfitti da te</small>
           </div>
+          <Diary />
         </div>
       ) : null}
     </Modal>
@@ -370,6 +356,7 @@ function BasePanel() {
 function Library() {
   const gstats = useGame((s) => s.room.gstats);
   const best = useGame((s) => s.room.best);
+  const indizi = useGame((s) => s.room.indizi);
   const open = unlockedLore(gstats, best);
   return (
     <div className="lore">
@@ -379,6 +366,15 @@ function Library() {
           <p>{l.text}</p>
         </article>
       ))}
+      {indizi.length > 0 && <h3 className="lore-section">Pagine scritte per voi</h3>}
+      {indizi.map((i) => (
+        <article key={i.grado} className="lore-narrator">
+          <h3>
+            {i.titolo} <small>record Grado {i.grado}</small>
+          </h3>
+          <p>{i.testo}</p>
+        </article>
+      ))}
       {open.length < LORE.length && (
         <p className="muted small-text">Altri {LORE.length - open.length} indizi aspettano nelle Fratture più profonde.</p>
       )}
@@ -386,3 +382,21 @@ function Library() {
   );
 }
 
+/** Le ultime righe del diario della compagnia (il narratore le legge). */
+function Diary() {
+  const diario = useGame((s) => s.room.diario);
+  if (!diario.length) return null;
+  const fmt = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' });
+  return (
+    <div className="diary">
+      <h3>Diario della compagnia</h3>
+      <ul>
+        {[...diario].reverse().map((d, i) => (
+          <li key={`${d.at}-${i}`}>
+            <small>{d.at ? fmt.format(d.at) : ''}</small> {d.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

@@ -138,6 +138,7 @@ function SideButtons() {
   const cls = useGame((s) => s.room.classes[s.selfId] ?? null);
   const isHost = useGame((s) => s.room.hostId === s.selfId);
   const inRun = useGame((s) => !!s.room.run && s.room.run.phase !== 'complete');
+  const missionsLeft = useGame((s) => (s.room.narrazione?.missioni ?? []).filter((m) => !s.room.fatte.includes(m.id)).length);
   return (
     <div className="side-buttons">
       <button
@@ -150,6 +151,15 @@ function SideButtons() {
       </button>
       <button className="icon-btn" onClick={() => setGame((s) => ({ panel: s.panel === 'zaino' ? null : 'zaino' }))} title="Zaino (I)" aria-label="Zaino">
         <span aria-hidden>🎒</span>
+      </button>
+      <button
+        className="icon-btn"
+        onClick={() => setGame((s) => ({ panel: s.panel === 'missioni' ? null : 'missioni' }))}
+        title="Missioni di oggi (M)"
+        aria-label="Missioni di oggi"
+      >
+        <span aria-hidden>📜</span>
+        {missionsLeft > 0 && <i className="dot">{missionsLeft}</i>}
       </button>
       <button className="icon-btn" onClick={() => setGame((s) => ({ classPicker: !s.classPicker }))} title="Classe (C)" aria-label="Classe">
         {cls ? <Icon name={`classe-${cls}`} size={30} /> : <span aria-hidden>✦</span>}
