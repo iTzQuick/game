@@ -216,6 +216,22 @@ Nel combattimento ognuno fa la sua parte:
   di rete;
 - la Frattura si genera da un seme, quindi in rete viaggia solo un numero.
 
+### Modelli 3D (Higgsfield)
+
+I modelli in `public/models` arrivano da Higgsfield (immagine → modello 3D con
+scheletro, poi un'animazione per file). Lo stile è il "cartoon morbido".
+
+```bash
+# unisce i clip (stesso scheletro), riduce le texture a WebP 1024, comprime la geometria
+node scripts/models/prepare.mjs public/models/guardiano.glb \
+  idle.glb:idle run.glb:run attack.glb:attack down.glb:down --texture 1024
+node scripts/models/inspect.mjs public/models/*.glb   # triangoli, texture, clip, misure
+```
+
+Per usarne uno nuovo basta aggiungerlo in `src/player/models.tsx` (altezza, nomi
+dei clip, velocità della corsa). Classi e nemici senza modello usano ancora le forme
+semplici, e lo stesso succede se un file non si carica.
+
 ## Prossima tappa
 
 - Gli avatar dalle foto (tappa 5, in attesa).

@@ -11,6 +11,7 @@ import { useGame, type Quality } from '../game/store';
 import { stone } from '../player/materials';
 import { ALTARS, ISLAND_RADIUS, PILLARS, PORTALS, RIFT, seeded } from './layout';
 import { Buildings } from './Buildings';
+import { PropOr } from '../player/models';
 
 /** Rumore ripetibile per posizione: i vertici condivisi restano attaccati. */
 function hash3(x: number, y: number, z: number): number {
@@ -274,6 +275,17 @@ function Portal({
   quality: Quality;
 }) {
   const ringGeo = useMemo(() => jitter(new THREE.TorusGeometry(2.35, 0.38, 5, 16), 0.18, () => false), []);
+  // il velo dentro l'arco: rettangolo con la cima tonda (coordinate relative a y = 3)
+  const archGeo = useMemo(() => {
+    const w = 1.25;
+    const shape = new THREE.Shape();
+    shape.moveTo(-w, -1.9);
+    shape.lineTo(w, -1.9);
+    shape.lineTo(w, 0.45);
+    shape.absarc(0, 0.45, w, 0, Math.PI, false);
+    shape.lineTo(-w, -1.9);
+    return new THREE.ShapeGeometry(shape, 16);
+  }, []);
   const discMat = useMemo(
     () => new THREE.MeshStandardMaterial({ color: '#05040a', emissive: tint, emissiveIntensity: 0.08, roughness: 1, side: THREE.DoubleSide }),
     [tint],
@@ -302,11 +314,24 @@ function Portal({
       <mesh material={stone('#3a3443')} position={[0, 0.2, 0]} receiveShadow castShadow>
         <cylinderGeometry args={[3.2, 3.4, 0.4, 10]} />
       </mesh>
+      {/* l'arco: modello 3D di Higgsfield, o le forme semplici se non c'è */}
+      <group position={[0, 0.4, 0]}>
+        <PropOr
+          name="portale"
+          fallback={
+            <group>
+              <mesh geometry={ringGeo} material={stone('#5a5266')} castShadow position={[0, 2.6, 0]} />
+              {[-2.2, 2.2].map((px) => (
+                <mesh key={px} material={stone('#4a4355')} position={[px, 0.5, 0]} castShadow>
+                  <boxGeometry args={[0.9, 1.1, 0.9]} />
+                </mesh>
+              ))}
+            </group>
+          }
+        />
+      </group>
       <group position={[0, 3, 0]}>
-        <mesh geometry={ringGeo} material={stone('#5a5266')} castShadow />
-        <mesh material={discMat}>
-          <circleGeometry args={[2.05, 28]} />
-        </mesh>
+        <mesh material={discMat} geometry={archGeo} />
         {/* le fratture */}
         {[
           [0.2, 0.3, 0.6, 2.6],
@@ -325,12 +350,6 @@ function Portal({
           ))}
         </group>
       </group>
-      {/* basamenti dell'arco */}
-      {[-2.2, 2.2].map((px) => (
-        <mesh key={px} material={stone('#4a4355')} position={[px, 0.9, 0]} castShadow>
-          <boxGeometry args={[0.9, 1.1, 0.9]} />
-        </mesh>
-      ))}
       {quality === 'alta' && <pointLight position={[0, 2.5, -1.2]} color={tint} intensity={2} distance={7} />}
       <Html position={[0, 6, 0]} center distanceFactor={16} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
         <div className="portal-label" style={{ color: tint }}>
