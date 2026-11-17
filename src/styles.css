@@ -2098,3 +2098,99 @@ table.controls th.hl {
   color: var(--muted);
   margin-right: 4px;
 }
+
+/* --- Città Sommersa: ossigeno, Atto I, voto ------------------------------------------ */
+.oxygen-bar {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.oxygen-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(10, 6, 20, 0.8);
+  border: 1px solid rgba(127, 246, 255, 0.35);
+  overflow: hidden;
+}
+.oxygen-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4fd8ff, #b8fbff);
+  transition: width 0.15s;
+}
+.oxygen-bar.low .oxygen-fill {
+  background: linear-gradient(90deg, #ff4f6d, #ffb35f);
+  animation: oxy-blink 0.6s ease-in-out infinite alternate;
+}
+@keyframes oxy-blink {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.oxygen-hint {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #ffb3c0;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+.atto-intro {
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+.mission.locked {
+  opacity: 0.45;
+}
+.verita {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(127, 246, 255, 0.4);
+  background: rgba(95, 227, 214, 0.07);
+}
+.verita h3 {
+  margin: 0 0 6px;
+  font-family: Georgia, serif;
+  font-weight: 400;
+  color: #b8fbff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.verita p {
+  margin: 0 0 6px;
+  line-height: 1.45;
+}
+.vote-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.vote-options button {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 10px 12px;
+  white-space: normal;
+}
+.vote-options button b {
+  font-size: 15px;
+}
+.vote-options button small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+.vote-options button.chosen {
+  border-color: #ffd25a;
+  box-shadow: 0 0 0 1px #ffd25a inset;
+}
+@media (max-width: 560px) {
+  .vote-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

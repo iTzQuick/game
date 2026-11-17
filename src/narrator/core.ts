@@ -9,9 +9,11 @@
 
 // --- Pezzi con cui si compone una missione --------------------------------------
 
-/** Nemici comuni (il boss, l'Eco, c'è sempre alla fine). Uguali a ENEMY_TYPES di combat/defs.ts. */
-export const NEMICI = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato'] as const;
+/** Nemici comuni (i boss ci sono sempre alla fine). Uguali a ENEMY_TYPES di combat/defs.ts, boss esclusi. */
+export const NEMICI = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato', 'annegato', 'anguilla'] as const;
 export type NemicoMissione = (typeof NEMICI)[number];
+/** Quelli delle Fratture normali: li usano le missioni del giorno (gli altri vivono nella Città Sommersa). */
+export const NEMICI_GIORNALIERI = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato'] as const satisfies readonly NemicoMissione[];
 
 /** Uguali a MOD_IDS di combat/defs.ts (lo controlla un test). */
 export const MODIFICATORI = ['veloci', 'senza-cure', 'pesanti', 'velati', 'frenesia'] as const;
@@ -69,7 +71,7 @@ export const LIMITI = {
   indizioTitolo: 50,
   indizioTesto: 520,
   /** quanti nemici da sconfiggere, per tipo */
-  quanti: { ombra: [5, 14], sciame: [8, 20], riflesso: [4, 10], bruto: [2, 5], velato: [4, 10] } as Record<NemicoMissione, [number, number]>,
+  quanti: { ombra: [5, 14], sciame: [8, 20], riflesso: [4, 10], bruto: [2, 5], velato: [4, 10], annegato: [4, 14], anguilla: [4, 12] } as Record<NemicoMissione, [number, number]>,
   minuti: [5, 15] as [number, number],
 };
 
@@ -79,6 +81,8 @@ const NOMI: Record<NemicoMissione, [string, string]> = {
   riflesso: ['Riflesso', 'Riflessi'],
   bruto: ['Bruto', 'Bruti'],
   velato: ['Velato', 'Velati'],
+  annegato: ['Annegato', 'Annegati'],
+  anguilla: ['Anguilla d’ombra', 'Anguille d’ombra'],
 };
 
 export const nomeNemico = (n: NemicoMissione, plurale = false) => NOMI[n][plurale ? 1 : 0];
@@ -290,13 +294,13 @@ export const SCHEMA_MISSIONI = {
           obiettivo: { type: 'string', enum: [...OBIETTIVI] },
           nemico_obiettivo: {
             type: 'string',
-            enum: [...NEMICI, 'nessuno'],
+            enum: [...NEMICI_GIORNALIERI, 'nessuno'],
             description: 'Solo per l’obiettivo "sconfiggi": quale nemico. Altrimenti "nessuno".',
           },
           quanti: { type: 'integer', description: 'Solo per "sconfiggi": quanti nemici. Altrimenti 0.' },
           minuti: { type: 'integer', description: 'Solo per "veloce": il tempo limite in minuti. Altrimenti 0.' },
           modificatori: { type: 'array', items: { type: 'string', enum: [...MODIFICATORI] }, description: 'Da 0 a 2.' },
-          nemico_frequente: { type: 'string', enum: [...NEMICI, 'nessuno'] },
+          nemico_frequente: { type: 'string', enum: [...NEMICI_GIORNALIERI, 'nessuno'] },
         },
         required: ['titolo', 'racconto', 'obiettivo', 'nemico_obiettivo', 'quanti', 'minuti', 'modificatori', 'nemico_frequente'],
         additionalProperties: false,

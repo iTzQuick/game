@@ -11,6 +11,7 @@ import { addDiary, contribute, emptyGroup, normalizeGroup, type GroupData } from
 import { BUILDINGS } from './defs';
 import { giornoRoma, narrazioneRiserva, testoObiettivo, validaNarrazione, type Narrazione } from '../narrator/core';
 import { narrazioneDelGiorno, nuovoIndizio, spiegaMotivo } from '../narrator/client';
+import { ATTO1, TEMPO_VOTO, VOTO, avanzaAtto, esitoVoto } from '../citta/core';
 import { getProgress, mutate } from './store';
 
 const localKey = (code: string) => `fratture.group.${code}`;
@@ -143,6 +144,7 @@ class GroupKeeper {
             best: st.best ?? data.best,
             base: st.base ?? data.base,
             stats: st.gstats ?? data.stats,
+            atto1: st.atto1 ?? data.atto1,
           };
         } else {
           const { code, data } = await ownGroup();
@@ -151,7 +153,7 @@ class GroupKeeper {
           room.updateRoom((s) => ({ ...s, group: code, grado: data.grado, best: data.best, base: data.base, gstats: data.stats }));
         }
         const d = this.data;
-        room.updateRoom((s) => ({ ...s, indizi: d.indizi, diario: d.diario.slice(-DIARIO_VISIBILE) }));
+        room.updateRoom((s) => ({ ...s, indizi: d.indizi, diario: d.diario.slice(-DIARIO_VISIBILE), atto1: d.atto1 }));
       } catch (e) {
         console.warn('Compagnia non caricata', e);
         this.code = null;
@@ -178,7 +180,16 @@ class GroupKeeper {
       const names = room.admittedIds.map((id) => displayName(id)).join(', ');
       addDiary(d, `Frattura di Grado ${run.grado} richiusa da ${names}${run.wipes ? ` (tutti a terra ${run.wipes === 1 ? 'una volta' : `${run.wipes} volte`})` : ', senza mai cadere tutti insieme'}.`);
       const m = run.missione;
-      if (m?.esito === 'compiuta') {
+      if (m?.id.startsWith('atto1-')) {
+        // la storia della Città Sommersa
+        if (m.esito === 'compiuta') {
+          const prima = d.atto1.fatte;
+          d.atto1 = avanzaAtto(d.atto1, m.id);
+          addDiary(d, `Città Sommersa: «${m.titolo}» compiuta${d.atto1.fatte > prima ? '' : ' di nuovo'}.`);
+          const atto1 = d.atto1;
+          room.updateRoom((s) => ({ ...s, atto1 }));
+        } else if (m.esito === 'fallita') addDiary(d, `Città Sommersa: «${m.titolo}» fallita.`);
+      } else if (m?.esito === 'compiuta') {
         addDiary(d, `Missione «${m.titolo}» compiuta.`);
         const giorno = m.id.slice(0, 10);
         const fatte = d.missioni.giorno === giorno ? [...new Set([...d.missioni.fatte, m.id])] : [m.id];
@@ -189,7 +200,30 @@ class GroupKeeper {
       room.updateRoom((s) => ({ ...s, gstats: d.stats, diario }));
       this.saveSoon();
     }
+    this.tickVote(room, d);
     this.tickNarrator(room, d);
+  }
+
+  /** Dopo la Campana la compagnia vota: si apre, si contano i voti, si chiude. */
+  private tickVote(room: NonNullable<ReturnType<typeof getRoom>>, d: GroupData) {
+    const v = room.roomState.voto;
+    if (!v && d.atto1.fatte >= ATTO1.length && d.atto1.scelta === null) {
+      room.updateRoom((s) => ({ ...s, voto: { id: 'atto1', aperto: true, voti: {}, scade: Date.now() + TEMPO_VOTO, esito: null } }));
+      return;
+    }
+    if (!v?.aperto) return;
+    const ids = room.admittedIds;
+    const votes = Object.keys(v.voti).length;
+    const everyone = ids.length > 0 && ids.every((id) => v.voti[id] !== undefined);
+    // senza nessun voto si aspetta: la scelta è della compagnia, non del caso
+    if (!everyone && (votes === 0 || Date.now() < v.scade)) return;
+    const esito = esitoVoto(v.voti, ids);
+    d.atto1 = { ...d.atto1, scelta: esito };
+    addDiary(d, `La compagnia ha deciso della Campana: «${VOTO.opzioni[esito].titolo}».`);
+    const atto1 = d.atto1;
+    const diario = d.diario.slice(-DIARIO_VISIBILE);
+    room.updateRoom((s) => ({ ...s, voto: { ...v, aperto: false, esito }, atto1, diario }));
+    void this.flush();
   }
 
   /** Missioni del giorno e indizi: prima quelli di riserva, poi (se si può) quelli di Claude. */
@@ -266,6 +300,11 @@ class GroupKeeper {
     if (msg.t === 'edie') {
       this.data.stats = { ...this.data.stats, kills: this.data.stats.kills + 1 };
       this.saveSoon();
+    } else if (msg.t === 'voto') {
+      const v = room.roomState.voto;
+      if (v?.aperto && room.admittedIds.includes(from) && (msg.v === 0 || msg.v === 1)) {
+        room.updateRoom((s) => (s.voto ? { ...s, voto: { ...s.voto, voti: { ...s.voto.voti, [from]: msg.v } } } : s));
+      }
     } else if (msg.t === 'contrib') {
       const wasBuilt = !!this.data.base[msg.b]?.u;
       const used = contribute(this.data, msg.b, msg.n);

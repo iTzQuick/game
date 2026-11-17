@@ -6,7 +6,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { spawnPuff, spawnRing } from '../fx/effects';
-import { EF, ENEMIES, type EnemyType } from './defs';
+import { EF, ENEMIES, isBoss, type EnemyType } from './defs';
 import { combat, setDeathFx, type CZone } from './runtime';
 import { ENEMY_MODELS, newCtrl } from '../player/RiggedModel';
 import { ModelOr } from '../player/models';
@@ -18,11 +18,14 @@ const ENEMY_COLORS: Record<EnemyType, { body: string; eye: string }> = {
   bruto: { body: '#3b2a1e', eye: '#b6ff5c' },
   velato: { body: '#e9e4f5', eye: '#9fe8ff' },
   eco: { body: '#120d1c', eye: '#ffffff' },
+  annegato: { body: '#5d7f86', eye: '#5dffd0' },
+  anguilla: { body: '#2a1840', eye: '#5dffd0' },
+  campana: { body: '#4f7a5e', eye: '#5dffd0' },
 };
 
 setDeathFx((x, z, type) => {
   spawnPuff(x, 1, z, ENEMY_COLORS[type].eye);
-  spawnRing(x, z, ENEMY_COLORS[type].eye, type === 'eco' ? 8 : 2.2, 0.5);
+  spawnRing(x, z, ENEMY_COLORS[type].eye, isBoss(type) ? 8 : 2.2, 0.5);
 });
 
 /** Ridisegna la lista quando cambiano gli id (non a ogni frame). */
@@ -114,7 +117,14 @@ function EnemyMesh({ id }: { id: number }) {
     const stunned = (e.flags & EF.stun) !== 0;
     const charging = now < e.charging;
     const speed = last.current.speed;
-    b.position.y = type === 'sciame' ? 0.35 + Math.sin(t * 6 + id) * 0.12 : Math.abs(Math.sin(t * 8 + id)) * 0.05 * Math.min(speed / 3, 1);
+    b.position.y =
+      type === 'sciame'
+        ? 0.35 + Math.sin(t * 6 + id) * 0.12
+        : type === 'anguilla'
+          ? 0.4 + Math.sin(t * 2.5 + id) * 0.15
+          : type === 'campana'
+            ? 0.6 + Math.sin(t * 1.2) * 0.25
+            : Math.abs(Math.sin(t * 8 + id)) * 0.05 * Math.min(speed / 3, 1);
     b.rotation.x = stunned ? 0.35 : charging ? -0.25 : Math.min(speed / 6, 1) * 0.2;
     const pulse = charging ? 1 + Math.sin(now / 40) * 0.05 : 1;
     b.scale.setScalar(pulse);
@@ -128,7 +138,14 @@ function EnemyMesh({ id }: { id: number }) {
         const w = modelWrap.current;
         w.position.copy(b.position);
         w.position.y -= 0.35;
-        w.rotation.set(b.rotation.x, 0, Math.sin(t * 3 + id) * 0.18);
+        if (type === 'anguilla') {
+          // nuota serpeggiando; quando scatta si tende in avanti
+          w.rotation.set(charging ? -0.15 : 0, Math.sin(t * 5 + id) * 0.35, Math.sin(t * 2.5 + id) * 0.1);
+        } else if (type === 'campana') {
+          // dondola come una campana, e quando carica il colpo oscilla forte
+          const swing = charging ? Math.sin(now / 90) * 0.35 : Math.sin(t * 1.3) * 0.12;
+          w.rotation.set(swing, 0, Math.sin(t * 0.9) * 0.08);
+        } else w.rotation.set(b.rotation.x, 0, Math.sin(t * 3 + id) * 0.18);
         w.scale.copy(b.scale);
       }
       ctrl.opacity = type === 'velato' && e.flags & EF.veiled ? 0.13 + Math.sin(t * 3 + id) * 0.04 : 1;
@@ -153,14 +170,14 @@ function EnemyMesh({ id }: { id: number }) {
     if (tauntRef.current) tauntRef.current.visible = (e.flags & EF.taunt) !== 0;
     if (hpGroup.current && hpFill.current) {
       const frac = Math.max(0, e.hp / e.maxHp);
-      hpGroup.current.visible = type !== 'eco' && frac < 0.999 && !(e.flags & EF.veiled);
+      hpGroup.current.visible = !isBoss(type) && frac < 0.999 && !(e.flags & EF.veiled);
       hpFill.current.scale.x = Math.max(0.001, frac);
       hpFill.current.position.x = -(1 - frac) * 0.6;
     }
   });
 
-  const s = type === 'eco' ? 1.8 : type === 'bruto' ? 1.35 : type === 'sciame' ? 0.7 : 1;
-  const headY = type === 'sciame' ? 0.9 : 1.6 * s;
+  const s = type === 'eco' ? 1.8 : type === 'campana' ? 2.2 : type === 'bruto' ? 1.35 : type === 'sciame' ? 0.7 : 1;
+  const headY = type === 'sciame' ? 0.9 : type === 'anguilla' ? 1.1 : 1.6 * s;
   return (
     <group ref={root} visible={false}>
       {modelDef && (
@@ -294,6 +311,65 @@ function EnemyBody({ type, mats, s }: { type: EnemyType; mats: EMats; s: number 
               <capsuleGeometry args={[0.08, 0.5, 3, 6]} />
             </mesh>
           ))}
+        </group>
+      );
+    case 'annegato':
+      return (
+        <group>
+          <mesh material={mats.body} position={[0, 0.55, 0]} castShadow>
+            <cylinderGeometry args={[0.18, 0.24, 1.1, 7]} />
+          </mesh>
+          <mesh material={mats.body} position={[0, 1.25, 0]} scale={[1, 1.1, 0.8]} castShadow>
+            <capsuleGeometry args={[0.28, 0.35, 4, 8]} />
+          </mesh>
+          <mesh material={mats.body} position={[0, 1.78, 0.03]} castShadow>
+            <sphereGeometry args={[0.22, 9, 7]} />
+          </mesh>
+          {/* cappello da pescatore */}
+          <mesh material={mats.body} position={[0, 1.95, 0]}>
+            <cylinderGeometry args={[0.2, 0.36, 0.18, 10]} />
+          </mesh>
+          <Eyes y={1.8} z={0.19} gap={0.08} r={0.05} mat={mats.eye} />
+          {[-1, 1].map((k) => (
+            <mesh key={k} material={mats.body} position={[k * 0.42, 1.1, 0.12]} rotation={[0.5, 0, k * 0.35]}>
+              <capsuleGeometry args={[0.07, 0.6, 3, 6]} />
+            </mesh>
+          ))}
+        </group>
+      );
+    case 'anguilla':
+      return (
+        <group position={[0, 0.7, 0]}>
+          <mesh material={mats.body} scale={[0.32, 0.36, 1.1]} castShadow>
+            <sphereGeometry args={[1, 12, 8]} />
+          </mesh>
+          <mesh material={mats.body} position={[0, 0, -1.25]} rotation={[-Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.22, 0.9, 7]} />
+          </mesh>
+          <mesh material={mats.glow} position={[0, 0.34, -0.2]} scale={[0.04, 0.22, 1.1]}>
+            <boxGeometry args={[1, 1, 1]} />
+          </mesh>
+          <Eyes y={0.12} z={0.85} gap={0.14} r={0.07} mat={mats.eye} />
+        </group>
+      );
+    case 'campana':
+      return (
+        <group scale={s}>
+          <mesh material={mats.body} position={[0, 1.1, 0]} castShadow>
+            <cylinderGeometry args={[0.45, 0.95, 1.5, 14, 1, true]} />
+          </mesh>
+          <mesh material={mats.body} position={[0, 1.9, 0]} castShadow>
+            <sphereGeometry args={[0.46, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          </mesh>
+          <mesh material={mats.body} position={[0, 2.45, 0]}>
+            <torusGeometry args={[0.18, 0.06, 6, 12]} />
+          </mesh>
+          <mesh material={mats.glow} position={[0, 0.5, 0]}>
+            <sphereGeometry args={[0.22, 10, 8]} />
+          </mesh>
+          <mesh material={mats.eye} position={[0, 1.3, 0.72]}>
+            <sphereGeometry args={[0.16, 12, 8]} />
+          </mesh>
         </group>
       );
     case 'velato':

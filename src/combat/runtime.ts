@@ -20,11 +20,12 @@ import {
   ULTRA_MAX,
   type EnemyType,
 } from './defs';
-import { walkable, type Dungeon } from './dungeon';
+import { roomAt, walkable, type Dungeon } from './dungeon';
 import { VF, type CombatMsg, type ZoneSpec } from './protocol';
 import type { Hit } from './sim';
 import { emptyMods, type Mods } from '../progress/model';
 import { POTION_HEAL } from '../progress/defs';
+import { CITTA, OSSIGENO, colonneBolle, inColonna, passoOssigeno, type Colonna } from '../citta/core';
 
 export interface EnemyView {
   id: number;
@@ -131,6 +132,8 @@ export interface MyVitals {
   lastHurt: number;
   /** pozioni del Giardino per questa Frattura */
   potions: number;
+  /** ossigeno nella Città Sommersa (0-100) */
+  oxygen: number;
 }
 
 const freshVitals = (maxHp: number): MyVitals => ({
@@ -153,6 +156,7 @@ const freshVitals = (maxHp: number): MyVitals => ({
   varcoCd: 0,
   lastHurt: 0,
   potions: 0,
+  oxygen: OSSIGENO.max,
 });
 
 export interface TickCtx {
@@ -182,6 +186,11 @@ class CombatRuntime {
   private pendingHits: Hit[] = [];
   /** Richiamato quando passiamo da un Varco (per la combo della Lama). */
   onVarcoPass: ((z: CZone, fromA: boolean) => void) | null = null;
+  /** Colonne di bolle della Frattura in corso (Città Sommersa). */
+  colonne: Colonna[] = [];
+  private colonneSeed = -1;
+  /** vita persa senza ossigeno, accumulata per non mostrare un numero a ogni fotogramma */
+  private choke = 0;
   /** Richiamato per gli effetti delle abilità degli altri. */
   onRemoteAbility: ((from: string, msg: Extract<CombatMsg, { t: 'ab' }>) => void) | null = null;
 
@@ -449,6 +458,45 @@ class CombatRuntime {
     }
   }
 
+  // --- Città Sommersa: ossigeno ----------------------------------------------------
+
+  inCitta() {
+    const run = getGame().room.run;
+    return run?.mondo === CITTA;
+  }
+
+  /** Un colpo di Annegato o della Campana toglie anche il fiato. */
+  private loseOxygen(enemyId: number) {
+    if (!this.inCitta()) return;
+    const type = this.enemies.get(enemyId)?.type;
+    const o = type ? ENEMIES[type].oxygen : 0;
+    if (o) this.me.oxygen = Math.max(0, this.me.oxygen - o);
+  }
+
+  private tickOxygen(dt: number, now: number, ctx: TickCtx) {
+    const run = getGame().room.run;
+    const m = this.me;
+    if (!ctx.inRun || run?.mondo !== CITTA || run.phase !== 'active' || !this.dungeon) {
+      m.oxygen = OSSIGENO.max;
+      return;
+    }
+    if (this.colonneSeed !== this.dungeon.seed) {
+      this.colonne = colonneBolle(this.dungeon);
+      this.colonneSeed = this.dungeon.seed;
+    }
+    if (!this.alive) return;
+    // nella stanza d'ingresso si respira (è il punto sicuro)
+    const air = roomAt(this.dungeon, ctx.x, ctx.z) === 0 || inColonna(this.colonne, ctx.x, ctx.z);
+    const step = passoOssigeno(m.oxygen, Math.min(dt, 0.1), air, m.maxHp);
+    m.oxygen = step.o;
+    this.choke += step.danno;
+    if (this.choke >= 3) {
+      const d = Math.floor(this.choke);
+      this.choke -= d;
+      this.damageMe(d, now);
+    }
+  }
+
   // --- ciclo per frame ---------------------------------------------------------
 
   tick(dt: number, now: number, ctx: TickCtx) {
@@ -487,8 +535,13 @@ class CombatRuntime {
         diff = Math.atan2(Math.sin(diff), Math.cos(diff));
         hit = Math.abs(diff) <= t.arc / 2 + 0.15;
       }
-      if (hit) this.damageMe(t.dmg, now);
+      if (hit) {
+        this.damageMe(t.dmg, now);
+        this.loseOxygen(t.id);
+      }
     }
+
+    this.tickOxygen(dt, now, ctx);
     this.telegraphs = this.telegraphs.filter((t) => !t.done || now - t.t1 < 250);
 
     // proiettili nemici
@@ -535,6 +588,7 @@ class CombatRuntime {
       if (ctx.inRun && this.alive && Math.hypot(p.x - ctx.x, p.z - ctx.z) < 0.7) {
         p.alive = false;
         this.damageMe(p.dmg, now);
+        this.loseOxygen(p.src);
       }
     }
     this.eprojs = this.eprojs.filter((p) => p.alive);

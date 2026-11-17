@@ -11,8 +11,11 @@ import { useGame, type Quality } from '../game/store';
 import type { RunState } from '../net/roomLogic';
 import { SkyBand } from './SkyBand';
 import { SURFACES } from './textures';
+import { CITTA, OSSIGENO, colonneBolle, type Colonna } from '../citta/core';
+import { PropOr } from '../player/models';
 
 const ROOM_TINTS = ['#2fd6a0', '#8fd14f', '#ff4f9a', '#b48cff', '#e9e4ff', '#19d3c5'];
+const CITTA_TINTS = ['#5dffd0', '#2fd6a0', '#7fe8ff', '#19d3c5'];
 
 export function useDungeon(run: RunState | null): Dungeon | null {
   const seed = run?.seed;
@@ -24,18 +27,33 @@ export function Frattura({ quality }: { quality: Quality }) {
   const run = useGame((s) => s.room.run);
   const d = useDungeon(run);
   if (!d || !run) return null;
+  const citta = run.mondo === CITTA;
+  const tints = citta ? CITTA_TINTS : ROOM_TINTS;
   return (
     <group>
-      <color attach="background" args={['#05040a']} />
-      <fog attach="fog" args={['#0d0818', 18, 70]} />
-      <Stars radius={120} depth={40} count={quality === 'bassa' ? 800 : 2000} factor={4} fade speed={0.3} />
-      <SkyBand dim={0.45} />
-      <hemisphereLight args={['#5a4a90', '#08040e', 0.8]} />
-      <ambientLight intensity={0.2} color="#8d7fc4" />
+      {citta ? (
+        <>
+          {/* sul fondo della Città: acqua verde-azzurra, luce che scende dalla superficie */}
+          <color attach="background" args={['#03161d']} />
+          <fog attach="fog" args={['#07303a', 10, 52]} />
+          <SkyBand dim={0.7} file="citta-fondale.webp" />
+          <hemisphereLight args={['#6fd8d0', '#03161d', 0.9]} />
+          <ambientLight intensity={0.25} color="#7fe8ff" />
+        </>
+      ) : (
+        <>
+          <color attach="background" args={['#05040a']} />
+          <fog attach="fog" args={['#0d0818', 18, 70]} />
+          <Stars radius={120} depth={40} count={quality === 'bassa' ? 800 : 2000} factor={4} fade speed={0.3} />
+          <SkyBand dim={0.45} />
+          <hemisphereLight args={['#5a4a90', '#08040e', 0.8]} />
+          <ambientLight intensity={0.2} color="#8d7fc4" />
+        </>
+      )}
       <directionalLight
         position={[-14, 26, 10]}
-        intensity={1.2}
-        color="#c4ccff"
+        intensity={citta ? 1.0 : 1.2}
+        color={citta ? '#bff6ff' : '#c4ccff'}
         castShadow={quality !== 'bassa'}
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
@@ -44,19 +62,22 @@ export function Frattura({ quality }: { quality: Quality }) {
         shadow-camera-top={40}
         shadow-camera-bottom={-40}
       />
-      <Geometry d={d} />
+      <Geometry d={d} citta={citta} />
       {d.corridors.map((c) => (
-        <Gate key={c.i} x={c.x} z={c.rect.z1} open={run.cleared > c.i} tint={ROOM_TINTS[(c.i + 1) % ROOM_TINTS.length]} />
+        <Gate key={c.i} x={c.x} z={c.rect.z1} open={run.cleared > c.i} tint={tints[(c.i + 1) % tints.length]} />
       ))}
       {d.rooms.map((r) => (
-        <RoomDecor key={r.i} d={d} i={r.i} quality={quality} active={run.fight === r.i} />
+        <RoomDecor key={r.i} d={d} i={r.i} quality={quality} active={run.fight === r.i} tints={tints} />
       ))}
+      {citta && <CittaDecor d={d} quality={quality} />}
       {run.phase === 'complete' && <ExitPortal x={d.rooms[d.rooms.length - 1].cx} z={d.rooms[d.rooms.length - 1].rect.z0 + 4} />}
     </group>
   );
 }
 
-function Geometry({ d }: { d: Dungeon }) {
+function Geometry({ d, citta }: { d: Dungeon; citta: boolean }) {
+  const floor = citta ? SURFACES.cittaFloor : SURFACES.dungeonFloor;
+  const wall = citta ? SURFACES.cittaWall : SURFACES.dungeonWall;
   const walls = useMemo(() => wallBoxes(d), [d]);
   const floors = useMemo(
     () => [
@@ -80,18 +101,18 @@ function Geometry({ d }: { d: Dungeon }) {
       </RigidBody>
 
       {floors.map((f, i) => (
-        <mesh key={`fm${i}`} position={[(f.x0 + f.x1) / 2, -0.5, (f.z0 + f.z1) / 2]} material={f.tint < 0 ? SURFACES.dungeonFloor('#2a2433', '#b9b0c8') : f.tint % 2 ? SURFACES.dungeonFloor('#3a3346', '#f2ecfa') : SURFACES.dungeonFloor('#352f42')} receiveShadow>
+        <mesh key={`fm${i}`} position={[(f.x0 + f.x1) / 2, -0.5, (f.z0 + f.z1) / 2]} material={f.tint < 0 ? floor(citta ? '#264a4e' : '#2a2433', '#b9b0c8') : f.tint % 2 ? floor(citta ? '#2f5a5e' : '#3a3346', '#f2ecfa') : floor(citta ? '#2f5a5e' : '#352f42')} receiveShadow>
           <boxGeometry args={[f.x1 - f.x0, 1, f.z1 - f.z0]} />
         </mesh>
       ))}
       {walls.map((w, i) => (
-        <mesh key={`wm${i}`} position={[w.x, WALL_HEIGHT / 2, w.z]} material={SURFACES.dungeonWall('#4a4355')} castShadow receiveShadow>
+        <mesh key={`wm${i}`} position={[w.x, WALL_HEIGHT / 2, w.z]} material={wall(citta ? '#3d6468' : '#4a4355')} castShadow receiveShadow>
           <boxGeometry args={[w.hx * 2, WALL_HEIGHT, w.hz * 2]} />
         </mesh>
       ))}
       {d.rooms.flatMap((r) =>
         r.pillars.map((p, i) => (
-          <mesh key={`pm${r.i}-${i}`} position={[p.x, p.h / 2, p.z]} material={SURFACES.dungeonWall('#4f4760')} castShadow receiveShadow>
+          <mesh key={`pm${r.i}-${i}`} position={[p.x, p.h / 2, p.z]} material={wall(citta ? '#45706f' : '#4f4760')} castShadow receiveShadow>
             <cylinderGeometry args={[p.r * 0.92, p.r, p.h, 7]} />
           </mesh>
         )),
@@ -100,9 +121,9 @@ function Geometry({ d }: { d: Dungeon }) {
   );
 }
 
-function RoomDecor({ d, i, quality, active }: { d: Dungeon; i: number; quality: Quality; active: boolean }) {
+function RoomDecor({ d, i, quality, active, tints }: { d: Dungeon; i: number; quality: Quality; active: boolean; tints: string[] }) {
   const r = d.rooms[i];
-  const tint = ROOM_TINTS[i % ROOM_TINTS.length];
+  const tint = tints[i % tints.length];
   const runeMat = useMemo(() => new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.3, depthWrite: false }), [tint]);
   useFrame(({ clock }) => {
     runeMat.opacity = active ? 0.45 + Math.sin(clock.elapsedTime * 5) * 0.2 : 0.22 + Math.sin(clock.elapsedTime + i) * 0.06;
@@ -184,6 +205,96 @@ function ExitPortal({ x, z }: { x: number; z: number }) {
           Verso il Crocevia
         </div>
       </Html>
+    </group>
+  );
+}
+
+// --- Città Sommersa ------------------------------------------------------------------
+
+/** Velo d'acqua sui pavimenti, colonne di bolle, il campanile nella stanza della Campana. */
+function CittaDecor({ d, quality }: { d: Dungeon; quality: Quality }) {
+  const colonne = useMemo(() => colonneBolle(d), [d]);
+  const veil = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#5fe3d6', transparent: true, opacity: 0.1, depthWrite: false, blending: THREE.AdditiveBlending }),
+    [],
+  );
+  useFrame(({ clock }) => {
+    veil.opacity = 0.08 + Math.sin(clock.elapsedTime * 0.7) * 0.03;
+  });
+  const boss = d.rooms[d.rooms.length - 1];
+  return (
+    <group>
+      {d.rooms.map((r) => (
+        <mesh key={r.i} material={veil} rotation={[-Math.PI / 2, 0, 0]} position={[r.cx, 0.05, r.cz]}>
+          <planeGeometry args={[r.w, r.d]} />
+        </mesh>
+      ))}
+      {colonne.map((c, i) => (
+        <BubbleColumn key={i} c={c} quality={quality} />
+      ))}
+      {/* il campanile senza campana, in fondo alla stanza del boss */}
+      <group position={[boss.cx + boss.w * 0.3, 0, boss.rect.z0 + 3.2]}>
+        <RigidBody type="fixed" colliders={false}>
+          <CylinderCollider args={[3, 1.3]} position={[0, 3, 0]} />
+        </RigidBody>
+        <PropOr name="campanile" height={7} fallback={<CampanileShape />} />
+      </group>
+      {quality !== 'bassa' && (
+        <Sparkles count={quality === 'alta' ? 120 : 60} scale={[40, 8, 140]} position={[0, 3, -60]} size={2.5} speed={0.15} opacity={0.35} color="#9ff6ff" />
+      )}
+    </group>
+  );
+}
+
+function CampanileShape() {
+  return (
+    <group>
+      <mesh position={[0, 2.5, 0]} material={SURFACES.cittaWall('#3d6468')} castShadow>
+        <boxGeometry args={[2.4, 5, 2.4]} />
+      </mesh>
+      <mesh position={[0, 5.9, 0]} material={SURFACES.cittaWall('#45706f')} castShadow>
+        <boxGeometry args={[2.6, 1.8, 2.6]} />
+      </mesh>
+    </group>
+  );
+}
+
+const BUBBLE_GEO = new THREE.SphereGeometry(1, 8, 6);
+const BUBBLE_MAT = new THREE.MeshBasicMaterial({ color: '#bff8ff', transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending });
+const POOL_MAT = new THREE.MeshBasicMaterial({ color: '#7ff6ff', transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+/** la colonna d'acqua chiara: si vede da lontano senza coprire la scena */
+const SHAFT_MAT = new THREE.MeshBasicMaterial({ color: '#3fd8e0', transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+
+/** Una colonna di bolle: dove si riprende fiato. */
+function BubbleColumn({ c, quality }: { c: Colonna; quality: Quality }) {
+  const n = quality === 'bassa' ? 7 : 16;
+  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  const seeds = useMemo(() => Array.from({ length: n }, (_, i) => ({ p: (i * 0.618) % 1, a: i * 2.4, s: 0.035 + ((i * 37) % 10) / 220 })), [n]);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    seeds.forEach((b, i) => {
+      const m = refs.current[i];
+      if (!m) return;
+      const k = (t * 0.35 + b.p) % 1;
+      const r = OSSIGENO.raggio * 0.55 * (0.4 + 0.6 * Math.sin(b.a + t));
+      m.position.set(Math.cos(b.a + k * 3) * r, 0.2 + k * 5.5, Math.sin(b.a + k * 3) * r);
+      m.scale.setScalar(b.s * (0.6 + k));
+    });
+  });
+  return (
+    <group position={[c.x, 0, c.z]}>
+      <mesh material={POOL_MAT} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.07, 0]}>
+        <ringGeometry args={[OSSIGENO.raggio * 0.75, OSSIGENO.raggio, 32]} />
+      </mesh>
+      <mesh material={SHAFT_MAT} position={[0, 2.8, 0]}>
+        <cylinderGeometry args={[OSSIGENO.raggio * 0.45, OSSIGENO.raggio * 0.75, 5.6, 16, 1, true]} />
+      </mesh>
+      {seeds.map((_, i) => (
+        <mesh key={i} ref={(m) => {
+            refs.current[i] = m;
+          }} geometry={BUBBLE_GEO} material={BUBBLE_MAT} />
+      ))}
+      {quality === 'alta' && <pointLight position={[0, 1.5, 0]} color="#7ff6ff" intensity={6} distance={7} />}
     </group>
   );
 }

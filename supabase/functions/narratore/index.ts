@@ -16,9 +16,11 @@ import { createClient } from 'npm:@supabase/supabase-js@2.119.0';
 
 // --- Pezzi con cui si compone una missione --------------------------------------
 
-/** Nemici comuni (il boss, l'Eco, c'è sempre alla fine). Uguali a ENEMY_TYPES di combat/defs.ts. */
-export const NEMICI = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato'] as const;
+/** Nemici comuni (i boss ci sono sempre alla fine). Uguali a ENEMY_TYPES di combat/defs.ts, boss esclusi. */
+export const NEMICI = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato', 'annegato', 'anguilla'] as const;
 export type NemicoMissione = (typeof NEMICI)[number];
+/** Quelli delle Fratture normali: li usano le missioni del giorno (gli altri vivono nella Città Sommersa). */
+export const NEMICI_GIORNALIERI = ['ombra', 'sciame', 'riflesso', 'bruto', 'velato'] as const satisfies readonly NemicoMissione[];
 
 /** Uguali a MOD_IDS di combat/defs.ts (lo controlla un test). */
 export const MODIFICATORI = ['veloci', 'senza-cure', 'pesanti', 'velati', 'frenesia'] as const;
@@ -76,7 +78,7 @@ export const LIMITI = {
   indizioTitolo: 50,
   indizioTesto: 520,
   /** quanti nemici da sconfiggere, per tipo */
-  quanti: { ombra: [5, 14], sciame: [8, 20], riflesso: [4, 10], bruto: [2, 5], velato: [4, 10] } as Record<NemicoMissione, [number, number]>,
+  quanti: { ombra: [5, 14], sciame: [8, 20], riflesso: [4, 10], bruto: [2, 5], velato: [4, 10], annegato: [4, 14], anguilla: [4, 12] } as Record<NemicoMissione, [number, number]>,
   minuti: [5, 15] as [number, number],
 };
 
@@ -86,6 +88,8 @@ const NOMI: Record<NemicoMissione, [string, string]> = {
   riflesso: ['Riflesso', 'Riflessi'],
   bruto: ['Bruto', 'Bruti'],
   velato: ['Velato', 'Velati'],
+  annegato: ['Annegato', 'Annegati'],
+  anguilla: ['Anguilla d’ombra', 'Anguille d’ombra'],
 };
 
 export const nomeNemico = (n: NemicoMissione, plurale = false) => NOMI[n][plurale ? 1 : 0];
@@ -297,13 +301,13 @@ export const SCHEMA_MISSIONI = {
           obiettivo: { type: 'string', enum: [...OBIETTIVI] },
           nemico_obiettivo: {
             type: 'string',
-            enum: [...NEMICI, 'nessuno'],
+            enum: [...NEMICI_GIORNALIERI, 'nessuno'],
             description: 'Solo per l’obiettivo "sconfiggi": quale nemico. Altrimenti "nessuno".',
           },
           quanti: { type: 'integer', description: 'Solo per "sconfiggi": quanti nemici. Altrimenti 0.' },
           minuti: { type: 'integer', description: 'Solo per "veloce": il tempo limite in minuti. Altrimenti 0.' },
           modificatori: { type: 'array', items: { type: 'string', enum: [...MODIFICATORI] }, description: 'Da 0 a 2.' },
-          nemico_frequente: { type: 'string', enum: [...NEMICI, 'nessuno'] },
+          nemico_frequente: { type: 'string', enum: [...NEMICI_GIORNALIERI, 'nessuno'] },
         },
         required: ['titolo', 'racconto', 'obiettivo', 'nemico_obiettivo', 'quanti', 'minuti', 'modificatori', 'nemico_frequente'],
         additionalProperties: false,
@@ -571,6 +575,7 @@ IL MONDO
 - I nemici: l'Ombra (figura scura che colpisce da vicino), lo Sciame (nuvola di frammenti veloci e fragili), il Riflesso (una copia di vetro che spara da lontano), il Bruto (gigante lento che fa tremare il terreno), il Velato (un'ombra invisibile finché la Rivelazione non la mostra).
 - Le classi dei giocatori: Guardiano (scudo, protegge gli altri), Lama (veloce, colpisce alle spalle), Tessitore (magia del vuoto, controlla il campo), Custode (cure e luce).
 - Sul Crocevia la compagnia costruisce una base con i frammenti raccolti: Forgia, Giardino (pozioni), Biblioteca (indizi sul mistero), Sala dei trofei, Osservatorio.
+- La Città Sommersa è il primo mondo che si riapre: il suo portale si accende dopo la prima Frattura richiusa. Strade allagate sul fondo del mare, campanili coperti d'alghe, finestre che respirano bolle. L'aria finisce in fretta e si respira solo nelle colonne di bolle. Ci vivono gli Annegati (pescatori pallidi che, quando colpiscono, rubano il fiato) e le Anguille d'ombra (scattano in linea retta). In fondo c'è La Campana, che suona da sola. La sua storia (Atto I) ha cinque missioni; il diario dice a che punto è la compagnia.
 
 IL MISTERO
 La verità su cosa siano i segni, su chi abbia costruito il Crocevia, su chi abbia spezzato i portali e su cosa sia davvero l'Eco NON è ancora decisa. Non svelarla e non inventare risposte definitive. Puoi suggerire, collegare dettagli già noti e far nascere domande. Ogni testo deve aprire una domanda, non chiuderla.
@@ -627,7 +632,15 @@ export interface Compagnia {
   kills: number;
   edifici: string[];
   diario: { at: number; text: string }[];
+  /** Città Sommersa, Atto I */
+  atto: { fatte: number; scelta: 0 | 1 | null };
 }
+
+/** Missioni della storia e scelte del voto (come in src/citta/core.ts, che qui non si può importare). */
+export const ATTO1_MISSIONI = 5;
+export const SCELTE_CAMPANA = ['Portarla al Crocevia', 'Lasciarla al fondo'] as const;
+const VERITA_CAMPANA =
+  'Dentro la Campana, inciso nel bronzo, c’è un segno uguale a quelli sui polsi della compagnia e quattro nomi graffiati e poi cancellati. Sotto: «Suonerà quando torneranno. Noi non ci saremo più».';
 
 const num = (v: unknown, dflt = 0) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : dflt);
 
@@ -636,7 +649,9 @@ export function leggiCompagnia(raw: unknown): Compagnia {
   const stats = (r.stats && typeof r.stats === 'object' ? r.stats : {}) as Record<string, unknown>;
   const base = (r.base && typeof r.base === 'object' ? r.base : {}) as Record<string, { u?: unknown }>;
   const diario = Array.isArray(r.diario) ? r.diario : [];
+  const a = (r.atto1 && typeof r.atto1 === 'object' ? r.atto1 : {}) as Record<string, unknown>;
   return {
+    atto: { fatte: Math.min(ATTO1_MISSIONI, num(a.fatte)), scelta: a.scelta === 0 || a.scelta === 1 ? a.scelta : null },
     grado: Math.max(1, num(r.grado, 1)),
     best: num(r.best),
     fratture: num(stats.fratture),
@@ -660,6 +675,17 @@ export function contesto(c: Compagnia, giorno: string, indizi: Indizio[]): strin
     `Oggi è il ${giorno}.`,
     `La compagnia: Grado attuale ${c.grado}, record Grado ${c.best}, Fratture richiuse ${c.fratture}, Eco sconfitti ${c.bosses}, nemici sconfitti ${c.kills}.`,
     `Edifici costruiti: ${c.edifici.length ? c.edifici.join(', ') : 'nessuno'}.`,
+    c.fratture < 1
+      ? 'Città Sommersa: il portale è ancora spento.'
+      : `Città Sommersa: aperta; missioni della storia compiute ${c.atto.fatte} su ${ATTO1_MISSIONI}.`,
+    ...(c.atto.fatte >= ATTO1_MISSIONI
+      ? [
+          `La compagnia ha trovato il frammento di verità della Città: ${VERITA_CAMPANA}`,
+          c.atto.scelta === null
+            ? 'Deve ancora decidere cosa fare della Campana.'
+            : `Ha deciso cosa fare della Campana: «${SCELTE_CAMPANA[c.atto.scelta]}».`,
+        ]
+      : []),
     `Indizi già trovati in Biblioteca: ${indizi.length ? indizi.map((i) => `«${i.titolo}» (${i.testo})`).join(' ') : 'nessuno'}.`,
     'Diario della compagnia, dal più vecchio al più recente:',
     c.diario.length ? c.diario.map((d) => `- ${data(d.at)}: ${d.text}`).join('\n') : '- (vuoto: la compagnia è appena nata)',

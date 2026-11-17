@@ -7,6 +7,8 @@ import { setGame, useGame } from '../game/store';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { MissionsPanel } from './MissionsPanel';
+import { CittaPanel } from './CittaPanel';
+import { ATTO1, VERITA, VOTO } from '../citta/core';
 import { CLASS_STATS } from '../combat/defs';
 import {
   BUILDINGS,
@@ -50,6 +52,7 @@ export function ProgressPanels() {
   if (panel === 'zaino' || panel === 'forgia') return <InventoryPanel />;
   if (panel === 'base') return <BasePanel />;
   if (panel === 'missioni') return <MissionsPanel />;
+  if (panel === 'citta') return <CittaPanel />;
   return null;
 }
 
@@ -357,6 +360,7 @@ function Library() {
   const gstats = useGame((s) => s.room.gstats);
   const best = useGame((s) => s.room.best);
   const indizi = useGame((s) => s.room.indizi);
+  const atto = useGame((s) => s.room.atto1);
   const open = unlockedLore(gstats, best);
   return (
     <div className="lore">
@@ -366,6 +370,17 @@ function Library() {
           <p>{l.text}</p>
         </article>
       ))}
+      {atto.fatte >= ATTO1.length && (
+        <article className="lore-narrator">
+          <h3>
+            {VERITA.titolo} <small>frammento di verità · Città Sommersa</small>
+          </h3>
+          {VERITA.testo.map((t, i) => (
+            <p key={i}>{t}</p>
+          ))}
+          {atto.scelta !== null && <p className="muted">La compagnia ha scelto: «{VOTO.opzioni[atto.scelta].titolo}».</p>}
+        </article>
+      )}
       {indizi.length > 0 && <h3 className="lore-section">Pagine scritte per voi</h3>}
       {indizi.map((i) => (
         <article key={i.grado} className="lore-narrator">

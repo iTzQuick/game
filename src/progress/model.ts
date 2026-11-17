@@ -22,6 +22,7 @@ import {
   type StatKey,
 } from './defs';
 import { validaIndizio, type Indizio } from '../narrator/core';
+import { normalizzaAtto, progressoVuoto, type ProgressoAtto } from '../citta/core';
 
 // --- Salvataggio del giocatore -----------------------------------------------------
 
@@ -243,6 +244,8 @@ export interface GroupData {
   missioni: { giorno: string; fatte: string[] };
   /** indizi della Biblioteca scritti dal narratore, uno per record */
   indizi: Indizio[];
+  /** Città Sommersa, Atto I: missioni della storia compiute e scelta del voto */
+  atto1: ProgressoAtto;
 }
 
 export const emptyGroup = (): GroupData => ({
@@ -254,6 +257,7 @@ export const emptyGroup = (): GroupData => ({
   diario: [],
   missioni: { giorno: '', fatte: [] },
   indizi: [],
+  atto1: progressoVuoto(),
 });
 
 export function normalizeGroup(raw: unknown): GroupData {
@@ -279,6 +283,7 @@ export function normalizeGroup(raw: unknown): GroupData {
           .filter((i): i is Indizio => !!i)
           .slice(-40)
       : [],
+    atto1: normalizzaAtto(r.atto1),
   };
 }
 

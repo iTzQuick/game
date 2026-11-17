@@ -10,6 +10,7 @@ import { CLASSES, type ClassId } from '../game/constants';
 import { useGame, type Quality } from '../game/store';
 import { stone } from '../player/materials';
 import { ALTARS, ISLAND_RADIUS, PILLARS, PORTALS, RIFT, seeded } from './layout';
+import { CITTA, cittaAperta } from '../citta/core';
 import { Buildings } from './Buildings';
 import { PropOr } from '../player/models';
 import { SkyBand } from './SkyBand';
@@ -322,11 +323,19 @@ function Portal({
     return Array.from({ length: 6 }, () => ({ a: rnd() * Math.PI * 2, r: 2.9 + rnd() * 0.9, y: rnd() * 1.2 - 0.6, s: 0.12 + rnd() * 0.18 }));
   }, [angle]);
 
+  // il portale della Città Sommersa si accende dopo la prima Frattura richiusa
+  const lit = useGame((s) => id === CITTA && cittaAperta(s.room.gstats));
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
-    // un respiro debole: il portale è spento, non morto
-    discMat.emissiveIntensity = 0.06 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.35;
-    crackMat.opacity = 0.25 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.6;
+    if (lit) {
+      // acqua che respira dentro l'arco
+      discMat.emissiveIntensity = 0.38 + Math.sin(t * 1.6) * 0.12 + Math.sin(t * 4.3) * 0.04;
+      crackMat.opacity = 0.75 + Math.sin(t * 2.1) * 0.15;
+    } else {
+      // un respiro debole: il portale è spento, non morto
+      discMat.emissiveIntensity = 0.06 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.35;
+      crackMat.opacity = 0.25 + Math.max(0, Math.sin(t * 0.6 + angle * 3)) ** 6 * 0.6;
+    }
     if (shards.current) shards.current.rotation.z = t * 0.08;
   });
 
@@ -380,10 +389,11 @@ function Portal({
           ))}
         </group>
       </group>
-      {quality === 'alta' && <pointLight position={[0, 2.5, -1.2]} color={tint} intensity={2} distance={7} />}
+      {(quality === 'alta' || (lit && quality !== 'bassa')) && <pointLight position={[0, 2.5, -1.2]} color={tint} intensity={lit ? 10 : 2} distance={lit ? 12 : 7} />}
       <Html position={[0, 6, 0]} center distanceFactor={16} zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
         <div className="portal-label" style={{ color: tint }}>
           {name}
+          {lit ? ' · aperta' : ''}
         </div>
       </Html>
     </group>

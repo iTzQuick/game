@@ -9,6 +9,8 @@ import type { ModId } from '../combat/defs';
 import type { BuildingId } from '../progress/defs';
 import type { BuildingState, GroupData } from '../progress/model';
 import type { Indizio, NemicoMissione, Narrazione, Obiettivo } from '../narrator/core';
+import type { EnemyType } from '../combat/defs';
+import type { Mondo, ProgressoAtto, Voto } from '../citta/core';
 
 /** Missione del giorno in corso nella Frattura: la tiene aggiornata l'host. */
 export interface MissioneInCorso {
@@ -67,6 +69,10 @@ export interface RunState {
   wipes: number;
   /** Missione del giorno, se la Frattura è stata aperta per una missione. */
   missione?: MissioneInCorso | null;
+  /** Mondo della Frattura: null o assente = le Fratture del Crocevia. */
+  mondo?: Mondo | null;
+  /** Boss in fondo (se non è l'Eco). */
+  boss?: EnemyType;
 }
 
 export interface RoomState {
@@ -95,6 +101,10 @@ export interface RoomState {
   diario?: GroupData['diario'];
   /** Da dove vengono le missioni di oggi, in parole semplici (lo scrive l'host). */
   statoNarratore?: string;
+  /** Atto I della Città Sommersa: missioni della storia compiute e scelta. */
+  atto1?: ProgressoAtto;
+  /** Voto della compagnia in corso (o appena chiuso). */
+  voto?: Voto | null;
 }
 
 export const emptyRoomState = (): RoomState => ({ v: 0, classes: {}, run: null, grado: 1, best: 0 });

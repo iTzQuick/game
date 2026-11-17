@@ -2,11 +2,31 @@
 
 Action-RPG cooperativo 3D nel browser (PC e telefono), fino a 4 giocatori su invito.
 
-Stato: **tappa 6** della roadmap, il narratore AI (prima parte: missioni del giorno,
-dialoghi e indizi scritti da Claude). Prima: la progressione (tappa 5, senza gli avatar
+Stato: **tappa 6** della roadmap, il narratore AI (missioni del giorno, dialoghi e
+indizi scritti da Claude) e la **Città Sommersa** con il suo Atto I. Prima: la progressione (tappa 5, senza gli avatar
 dalle foto, per ora), il combattimento (tappa 4) e il Crocevia online (tappa 3).
 
 ## Cosa c'è
+
+### Tappa 6: la Città Sommersa (Atto I)
+
+- **Il portale si accende** quando la compagnia ha richiuso la prima Frattura: dal
+  Crocevia si apre il pannello dell'Atto I, cinque missioni della storia da fare in
+  ordine (quelle già fatte si possono rigiocare). Valgono per tutta la compagnia.
+- **Ossigeno:** nella Città l'aria cala di continuo (poco più di un minuto) e si
+  riprende nelle **colonne di bolle** (una nella stanza d'ingresso, due nelle stanze,
+  tre nella stanza del boss) o nella stanza d'ingresso. A zero si perde vita.
+- **Nemici nuovi:** l'**Annegato** (lento; quando colpisce ruba anche il fiato) e
+  l'**Anguilla d'ombra** (veloce, scatta in linea retta: ci si sposta di lato). Il boss
+  dell'ultima missione è **La Campana**: rintocchi a raggiera, colpi che tolgono fiato,
+  chiama Annegati e Anguille.
+- **Il frammento di verità e il voto:** dopo la Campana tutta la compagnia vota cosa
+  farne (vince la maggioranza, in parità chi è entrato per primo). La scelta si salva
+  con la compagnia, finisce nel diario e il narratore ne tiene conto.
+- **Aspetto:** selciato allagato, muri con alghe, fondale con i campanili affogati,
+  nebbia verde-acqua, campanile in rovina; modelli e texture generati con Higgsfield.
+
+Regole (pure, testate) in `src/citta/core.ts`.
 
 ### Tappa 6: il narratore
 
@@ -122,6 +142,7 @@ documento dice che si tarano giocando.
 | Personaggio e talenti | P | Pulsante 👤 |
 | Zaino | I | Pulsante 🎒 |
 | Missioni di oggi | M | Pulsante 📜 |
+| Atto I della Città Sommersa | G al portale acceso | Pulsante al portale |
 | Pozione | H | Pulsante 🧪 |
 
 Chi è host vede anche **Abbandona**, che riporta tutti al Crocevia.
@@ -220,6 +241,7 @@ src/
   world/     il Crocevia, la Frattura e le interazioni
   fx/        fendenti, anelli, lampi, raggi, ping
   ui/        menu, interfaccia, controlli touch, statistiche
+  citta/     Città Sommersa: ossigeno, colonne di bolle, Atto I, voto
   narrator/  missioni del giorno, battute, indizi (core.ts, condiviso con la
              funzione Supabase), chiamate al narratore (client.ts), logica della
              funzione (server.ts)
@@ -316,6 +338,4 @@ Cosa fa la funzione a ogni richiesta (solo POST, solo membri della compagnia):
 ## Prossima tappa
 
 - Gli avatar dalle foto (tappa 5, in attesa).
-- Tappa 6, seconda parte: la Città Sommersa (missioni della storia, ossigeno e bolle,
-  Annegati e Anguille d'ombra, il boss La Campana, un frammento di verità e il voto
-  del gruppo).
+- Gli atti degli altri mondi (Foresta dei Sussurri, Metropoli Spenta, Deserto degli Specchi).

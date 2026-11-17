@@ -24,6 +24,7 @@ import {
 import { LocalSignaling, SupabaseSignaling, type Signaling } from './signaling';
 import type { CombatMsg } from '../combat/protocol';
 import type { Indizio } from '../narrator/core';
+import type { ProgressoAtto } from '../citta/core';
 
 type Vec3 = [number, number, number];
 
@@ -77,6 +78,7 @@ const EMPTY_STATS = { fratture: 0, bosses: 0, kills: 0 };
 const EMPTY_LIST: string[] = [];
 const EMPTY_INDIZI: Indizio[] = [];
 const EMPTY_DIARIO: { at: number; text: string }[] = [];
+const EMPTY_ATTO: ProgressoAtto = { fatte: 0, scelta: null };
 
 /**
  * Chi sparisce per poco (telefono in tasca, rete che cade) non perde subito la
@@ -317,6 +319,8 @@ export class RoomClient {
       cur.indizi === (st.indizi ?? EMPTY_INDIZI) &&
       cur.diario === (st.diario ?? EMPTY_DIARIO) &&
       cur.statoNarratore === (st.statoNarratore ?? '') &&
+      cur.atto1 === (st.atto1 ?? EMPTY_ATTO) &&
+      cur.voto === (st.voto ?? null) &&
       cur.members.length === admitted.length &&
       cur.members.every((m, i) => m.id === admitted[i].id && m.name === admitted[i].name) &&
       JSON.stringify(cur.peers) === JSON.stringify(peers);
@@ -336,6 +340,8 @@ export class RoomClient {
         indizi: st.indizi ?? EMPTY_INDIZI,
         diario: st.diario ?? EMPTY_DIARIO,
         statoNarratore: st.statoNarratore ?? '',
+        atto1: st.atto1 ?? EMPTY_ATTO,
+        voto: st.voto ?? null,
         peers,
       });
     }
