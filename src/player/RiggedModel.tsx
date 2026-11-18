@@ -243,6 +243,20 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mixer, actions]);
 
+  /**
+   * Riavvolge un clip che parte adesso. Se in questo momento non è tra quelli in uso
+   * va FERMATO (stop), non solo riavvolto: un clip già usato una volta resta "iscritto"
+   * al mixer, e reset() lo riaccenderebbe a peso pieno senza che nessuno lo spenga più
+   * (il busto restava bloccato nella posa di fine colpo: corsa rigida e capriola storta).
+   * Lo riaccende la dissolvenza qui sotto, quando serve davvero.
+   */
+  const rewind = (a: THREE.AnimationAction) => {
+    if (state.current.active.has(a)) {
+      a.reset();
+      a.setEffectiveWeight(1);
+    } else a.stop();
+  };
+
   useFrame((_, dtRaw) => {
     const dt = Math.min(dtRaw, 0.1);
     const st = state.current;
@@ -258,9 +272,8 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       const speed = (st.atkKey !== 'attack' ? def.speeds?.[st.atkKey] : undefined) ?? def.attackSpeed ?? 1.6; // i clip della libreria sono lenti
       for (const a of [actions[st.atkKey], uppers[st.atkKey]]) {
         if (!a) continue;
-        a.reset();
+        rewind(a);
         a.timeScale = speed;
-        if (st.active.has(a)) a.setEffectiveWeight(1);
       }
       st.attackUntil = now + (actions[st.atkKey]!.getClip().duration / speed) * 1000 * 0.9;
     }
@@ -271,10 +284,9 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       const dur = actions.dodge.getClip().duration;
       const start = dur > 1 ? Math.min(DODGE_CLIP_START, dur * 0.5) : 0;
       const end = dur > DODGE_CLIP_END ? DODGE_CLIP_END : dur;
-      actions.dodge.reset();
+      rewind(actions.dodge);
       actions.dodge.time = start;
       actions.dodge.timeScale = (end - start) / DODGE_ANIM;
-      if (st.active.has(actions.dodge)) actions.dodge.setEffectiveWeight(1);
     }
     st.wasRolling = rolling;
     const attacking = now < st.attackUntil && !!actions.attack;
@@ -290,11 +302,14 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     else want = [actions.idle ?? actions.run];
 
     // dissolvenze tra i clip; le gambe non saltano passando tra corsa intera e corsa "solo gambe"
+    // (si guarda chi era acceso PRIMA di questo giro: nel giro la corsa si spegne prima
+    // che la corsa "solo gambe" copi il punto del passo)
+    const wasActive = new Set(st.active);
     for (const a of [...Object.values(actions), ...Object.values(uppers)]) {
       if (!a) continue;
       const on = want.includes(a);
       if (on && !st.active.has(a)) {
-        const keepTime = a === actions.runLower ? actions.run : a === actions.run ? actions.runLower : null;
+        const keepTime = a === actions.runLower ? actions.run : a === actions.run ? actions.runLower : a === atkUpper ? atkFull : a === atkFull ? atkUpper : null;
         // attacchi e capriola sono già stati riavvolti quando sono partiti: qui non si ricomincia da capo
         const isAttack = a === actions.dodge || ATTACK_KEYS.some((k) => a === actions[k] || a === uppers[k]);
         if (!isAttack) a.reset();
@@ -302,7 +317,7 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
           a.enabled = true;
           a.stopFading();
         }
-        if (keepTime && st.active.has(keepTime)) a.time = keepTime.time;
+        if (keepTime && wasActive.has(keepTime)) a.time = keepTime.time;
         a.setEffectiveWeight(1).fadeIn(0.15).play();
         st.active.add(a);
       } else if (!on && st.active.has(a)) {
@@ -322,6 +337,11 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     if (slow < 1 && attacking) {
       st.attackUntil += dt * 1000 * (1 - slow);
       st.attackStart += dt * 1000 * (1 - slow);
+    }
+    // ...ma le gambe no: il personaggio intanto si sposta, e con le gambe ferme scivolerebbe
+    if (slow < 1 && moving) {
+      if (actions.run) actions.run.timeScale = runScale / slow;
+      if (actions.runLower) actions.runLower.timeScale = runScale / slow;
     }
     mixer.update(dt * slow);
 
