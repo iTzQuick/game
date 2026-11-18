@@ -9,6 +9,7 @@ import { Effects } from '../fx/effects';
 import { addBoon, myBoons } from '../combat/boons';
 import { LocalPlayer, localDebug } from '../player/LocalPlayer';
 import { RemotePlayers } from '../player/RemotePlayers';
+import { BotPlayers } from '../player/BotPlayers';
 import { Hud } from '../ui/Hud';
 import { TouchControls } from '../ui/TouchControls';
 import { Crocevia } from '../world/Crocevia';
@@ -101,6 +102,7 @@ export function Game() {
             <LocalPlayer />
           </Physics>
           <RemotePlayers />
+          <BotPlayers />
           <CombatView />
           <Effects />
           <FrameCounter />

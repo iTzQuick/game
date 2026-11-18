@@ -30,6 +30,8 @@ export interface Settings {
   sound: number;
   /** Scossa della telecamera sui colpi forti. */
   shake: boolean;
+  /** Compagni guidati dal computer quando si è in pochi (decide chi ospita la partita). */
+  compagni: boolean;
 }
 
 export interface Dialog {
@@ -126,6 +128,7 @@ function loadSettings(): Settings {
     autoAim: true,
     sound: 0.7,
     shake: true,
+    compagni: true,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
