@@ -12,12 +12,14 @@ import { SnapshotBuffer } from '../net/interpolation';
 import { NET } from '../game/constants';
 import { emitCombat, onCombat } from './bus';
 import { AB, CLASS_STATS, ENEMIES, REVIVE_RADIUS, REVIVE_SECONDS, isBoss } from './defs';
-import { inRect, nextWaypoint, walkable, type Dungeon } from './dungeon';
+import { WALL_THICKNESS, inRect, nextWaypoint, walkable, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
 import type { EnemySim, PlayerView } from './sim';
 
 export const BOT_PREFIX = 'ia-';
+/** Distanza dal bordo di stanze e corridoi: metà muro (sporge verso l'interno) più il corpo. */
+export const BOT_CLEARANCE = WALL_THICKNESS / 2 + 0.45;
 export const isBotId = (id: string) => id.startsWith(BOT_PREFIX);
 export const botId = (cls: ClassId) => `${BOT_PREFIX}${cls}`;
 /** Nome corto sopra la testa: "Custode (IA)". */
@@ -272,10 +274,11 @@ export class BotManager {
       const leader = nearestHuman(b, o.humans);
       if (!leader) continue;
       const k = this.bots.indexOf(b);
-      // dietro al capo (le stanze avanzano verso -Z), uno a destra e uno a sinistra
-      const ang = k === 0 ? 0.7 : -0.7;
-      const fx = leader.x + Math.sin(ang) * 2.6;
-      const fz = leader.z + Math.cos(ang) * 2.6;
+      // ai lati del capo, appena dietro rispetto a dove va: così non stanno tra lui e la telecamera
+      const dir = this.leaderDir(leader, now);
+      const side = k === 0 ? 1 : -1;
+      const fx = leader.x + dir.z * side * 2.3 - dir.x * 0.7;
+      const fz = leader.z - dir.x * side * 2.3 - dir.z * 0.7;
       const far = Math.hypot(leader.x - b.x, leader.z - b.z);
       if (far > 18 || b.stuck > 1.4) this.blinkNear(b, leader, o);
       else if (Math.hypot(fx - b.x, fz - b.z) > 0.8) this.walk(b, fx, fz, 0.3, o, CLASS_STATS[b.cls].speed * (far > 6 ? 1.15 : 0.9));
@@ -358,7 +361,7 @@ export class BotManager {
   // --- movimento ---------------------------------------------------------------------
 
   private canStand(x: number, z: number, o: Pick<TickArgs, 'dungeon' | 'cleared'>): boolean {
-    if (!walkable(o.dungeon, x, z, 0.35)) return false;
+    if (!walkable(o.dungeon, x, z, BOT_CLEARANCE)) return false;
     // oltre una porta ancora chiusa non si passa
     for (const c of o.dungeon.corridors) if (o.cleared <= c.i && inRect(c.rect, x, z)) return false;
     return true;
@@ -390,6 +393,29 @@ export class BotManager {
     b.speed = speed;
     if (Math.hypot(wx - b.x, wz - b.z) < before - step * 0.25) b.stuck = Math.max(0, b.stuck - o.dt);
     else b.stuck += o.dt;
+  }
+
+  /** Dove sta andando il capo (dalle ultime posizioni); fermo, resta l'ultima direzione. */
+  private leaderTrack = new Map<string, { x: number; z: number; t: number; dx: number; dz: number }>();
+  private leaderDir(leader: PlayerView, now: number): { x: number; z: number } {
+    let tr = this.leaderTrack.get(leader.id);
+    if (!tr) {
+      tr = { x: leader.x, z: leader.z, t: now, dx: 0, dz: -1 };
+      this.leaderTrack.set(leader.id, tr);
+    }
+    const mx = leader.x - tr.x;
+    const mz = leader.z - tr.z;
+    const d = Math.hypot(mx, mz);
+    if (d > 1.2 || now - tr.t > 600) {
+      if (d > 0.4) {
+        tr.dx = mx / d;
+        tr.dz = mz / d;
+      }
+      tr.x = leader.x;
+      tr.z = leader.z;
+      tr.t = now;
+    }
+    return { x: tr.dx, z: tr.dz };
   }
 
   /** Riappare vicino a un punto (il capo, chi è a terra, il bersaglio): un piccolo sbuffo d'ombra. */

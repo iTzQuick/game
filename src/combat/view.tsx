@@ -6,6 +6,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { dustColor, spawnPuff, spawnRing, spawnSmoke, spawnSparks } from '../fx/effects';
+import { splashBig, splashStep } from '../fx/water';
 import { sfx } from '../audio/sfx';
 import { EF, ENEMIES, isBoss, type EnemyType } from './defs';
 import { hitStop, shake, zoomKick } from './feel';
@@ -33,6 +34,7 @@ setDeathFx((x, z, type) => {
   spawnRing(x, z, c, boss ? 8 : 2.6, boss ? 0.9 : 0.5);
   spawnSparks(x, boss ? 2 : 1, z, c, boss ? 60 : 16, boss ? 2.2 : 1.1);
   spawnSmoke(x, 0.3, z, boss ? 16 : 3, boss ? 2.2 : 0.7, boss ? dustColor() : c);
+  splashBig(x, z, boss ? 1.5 : 0.6);
   sfx.death(boss);
   // la scossa si sente solo se si è vicini; il boss scuote tutti
   const p = combat.selfPos;
@@ -59,6 +61,7 @@ setTeleFx((t) => {
   spawnSparks(t.x, 0.15, t.z, big ? '#d9b48c' : '#b9a38f', big ? 26 : 6, big ? 1.6 : 0.7);
   if (!big) return;
   spawnSmoke(t.x, 0.2, t.z, 12, t.rad * 0.45, dustColor());
+  splashBig(t.x, t.z, 1.4);
   const p = combat.selfPos;
   const d = Math.hypot(t.x - p.x, t.z - p.z);
   shake(d < t.rad + 3 ? 0.55 : 0.2);
@@ -178,6 +181,8 @@ function EnemyMesh({ id }: { id: number }) {
     last.current.speed += (Math.min(moved, 10) - last.current.speed) * 0.2;
     last.current.x = e.x;
     last.current.z = e.z;
+    // i nemici che camminano (non quelli che volano o nuotano) fanno schizzi nelle pozze
+    if (!dying && type !== 'sciame' && type !== 'anguilla' && type !== 'campana') splashStep(`e${id}`, e.x, e.z, last.current.speed);
     g.position.set(e.x, 0, e.z);
     g.rotation.y = e.yaw;
 

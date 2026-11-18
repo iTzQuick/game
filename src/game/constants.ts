@@ -128,10 +128,11 @@ export const MOVE = {
   accel: 40,
   gravity: 28,
   turnSpeed: 14,
-  dodgeSpeed: 17,
-  dodgeTime: 0.26,
-  /** Istanti di invulnerabilità durante la schivata (servirà alla tappa 4). */
-  dodgeIFrames: 0.22,
+  /** schivata: 0,4 s a 11,5 m/s (4,6 m), quanto la capriola */
+  dodgeSpeed: 11.5,
+  dodgeTime: 0.4,
+  /** Istanti di invulnerabilità durante la schivata. */
+  dodgeIFrames: 0.3,
   dodgeCooldown: 0.75,
   attackComboWindow: 0.55,
   attackDuration: 0.32,

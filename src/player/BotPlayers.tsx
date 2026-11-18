@@ -6,6 +6,7 @@ import { useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { CLASSES, NET } from '../game/constants';
 import { addBeam, spawnPuff, spawnRing, spawnSlash } from '../fx/effects';
+import { splashStep } from '../fx/water';
 import { remoteBolt } from '../combat/abilities';
 import { botListVersion, botName, botViews } from '../combat/bots';
 import { combat } from '../combat/runtime';
@@ -63,6 +64,7 @@ function BotPlayer({ id }: { id: string }) {
     pose.anim = s.a;
     pose.flags = v.flags;
     combat.renderPos.set(id, { x: s.p[0], y: s.p[1], z: s.p[2] });
+    splashStep(id, s.p[0], s.p[2], s.s);
 
     const p: [number, number, number] = [s.p[0], s.p[1], s.p[2]];
     const color = CLASSES[v.cls].color;

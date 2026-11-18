@@ -457,11 +457,22 @@ function RightHandGear({
 function NameTag({ playerId, name, icon, show }: { playerId: string; name: string; icon?: string; show: boolean }) {
   const isHost = useGame((s) => s.room.hostId === playerId);
   const emote = useGame((s) => s.emotes[playerId]);
+  // vicinissimo alla telecamera il nome diventerebbe enorme e coprirebbe lo schermo: sparisce
+  const anchor = useRef<THREE.Group>(null);
+  const tag = useRef<HTMLDivElement>(null);
+  const tmpPos = useMemo(() => new THREE.Vector3(), []);
+  useFrame(({ camera }) => {
+    if (!anchor.current || !tag.current) return;
+    anchor.current.getWorldPosition(tmpPos);
+    const d = camera.position.distanceTo(tmpPos);
+    tag.current.style.opacity = String(Math.max(0, Math.min(1, (d - 3) / 2)));
+  });
   if (!show && !emote) return null;
   const emoji = emote ? EMOTES[emote.e]?.icon : null;
   return (
-    <Html position={[0, 2.45, 0]} center distanceFactor={9} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
-      <div className="nametag">
+    <group ref={anchor} position={[0, 2.45, 0]}>
+    <Html center distanceFactor={9} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
+      <div className="nametag" ref={tag}>
         {emoji && (
           <div className="emote-bubble" key={emote!.t0}>
             {emoji}
@@ -477,6 +488,7 @@ function NameTag({ playerId, name, icon, show }: { playerId: string; name: strin
         {show && <HpBar playerId={playerId} />}
       </div>
     </Html>
+    </group>
   );
 }
 

@@ -5,7 +5,7 @@
 // (così una schivata fatta in tempo vale sempre, anche con un po' di ritardo).
 
 import { ENEMIES, EF, VEILED_DMG_TAKEN, AB, WAVE_POOLS, isBoss, type EnemyType, type ModId, type Scaling } from './defs';
-import { spawnPoints, type Dungeon } from './dungeon';
+import { WALL_THICKNESS, spawnPoints, type Dungeon } from './dungeon';
 
 export interface PlayerView {
   id: string;
@@ -533,7 +533,8 @@ export class EnemySim {
   /** Tiene il nemico nella sua stanza e fuori dalle colonne. */
   private confine(e: Enemy) {
     const room = this.dungeon.rooms[e.room];
-    const r = ENEMIES[e.type].radius;
+    // il Campione è più grosso degli altri (anche nella grafica)
+    const r = ENEMIES[e.type].radius * (e.elite ? 1.35 : 1);
     for (const p of room.pillars) {
       const dx = e.x - p.x;
       const dz = e.z - p.z;
@@ -545,8 +546,10 @@ export class EnemySim {
         e.z = p.z + dz * k;
       }
     }
-    e.x = clamp(e.x, room.rect.x0 + r + 0.3, room.rect.x1 - r - 0.3);
-    e.z = clamp(e.z, room.rect.z0 + r + 0.3, room.rect.z1 - r - 0.3);
+    // i muri stanno a cavallo del bordo: sporgono di mezzo spessore verso l'interno
+    const wall = WALL_THICKNESS / 2 + 0.05;
+    e.x = clamp(e.x, room.rect.x0 + r + wall, room.rect.x1 - r - wall);
+    e.z = clamp(e.z, room.rect.z0 + r + wall, room.rect.z1 - r - wall);
   }
 }
 

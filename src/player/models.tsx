@@ -18,7 +18,7 @@ const weapon = (name: string, y: number, fallback: ReactNode) => <PropOr name={n
 registerModels({
   heroes: {
     guardiano: {
-      file: 'guardiano.glb', height: 1.85, runSpeed: 5.5, attackSpeed: 1.5,
+      file: 'guardiano.glb', height: 1.85, runSpeed: 4.4, attackSpeed: 1.5,
       // 2° e 3° colpo, Colpo di scudo (Q), schianto per Barriera (R) e Bastione (F), capriola
       clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', attack2: 'attack2', attack3: 'attack3', abQ: 'abQ', abR: 'abR', abF: 'abR', dodge: 'dodge' },
       speeds: { attack2: 2.0, attack3: 2.1, abQ: 1.8, abR: 2.1, abF: 1.9 },
@@ -29,7 +29,7 @@ registerModels({
       ],
     },
     lama: {
-      file: 'lama.glb', height: 1.75, runSpeed: 6, attackSpeed: 1.5,
+      file: 'lama.glb', height: 1.75, runSpeed: 4.3, attackSpeed: 1.5,
       // combo a due lame, Scatto (Q), Lame vorticanti (E, anche nei Mille tagli), capriola
       clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', attack2: 'attack2', attack3: 'attack3', abQ: 'abQ', abE: 'abE', abF: 'abE', dodge: 'dodge' },
       speeds: { attack2: 2.5, attack3: 2.9, abQ: 2.4, abE: 2.9, abF: 2.9 },
@@ -39,14 +39,14 @@ registerModels({
       ],
     },
     tessitore: {
-      file: 'tessitore.glb', height: 1.95, runSpeed: 5.5, attackSpeed: 1.5,
+      file: 'tessitore.glb', height: 1.95, runSpeed: 4.6, attackSpeed: 1.5,
       // Varco (Q), Trappola (E), Collasso (F), capriola; il Dardo (R) usa l'attacco
       clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', abQ: 'abQ', abE: 'abE', abF: 'abF', dodge: 'dodge' },
       speeds: { abQ: 2.6, abE: 2.6, abF: 2.3 },
       gear: [{ bone: 'RightHand', pos: [-0.06, -0.14, 0.18], node: <Orb />, trail: { a: -0.06, b: 0.06 } }],
     },
     custode: {
-      file: 'custode.glb', height: 1.8, runSpeed: 5.5, attackSpeed: 1.5,
+      file: 'custode.glb', height: 1.8, runSpeed: 4.2, attackSpeed: 1.5,
       // Raggio (Q), Rivelazione e Benedizione (E, R), Alba (F), capriola
       clips: { idle: 'idle', run: 'run', attack: 'attack', down: 'down', abQ: 'abQ', abE: 'abR', abR: 'abR', abF: 'abF', dodge: 'dodge' },
       speeds: { abQ: 2.6, abE: 2.6, abR: 2.4, abF: 2.4 },
@@ -58,16 +58,16 @@ registerModels({
   },
   enemies: {
     // l'attacco dura quanto il preavviso (0,55 s), così il colpo cade quando arriva il danno
-    ombra: { file: 'ombra.glb', height: 1.95, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.6, attackSpeed: 1.1 },
+    ombra: { file: 'ombra.glb', height: 1.95, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.0, attackSpeed: 1.1 },
     // senza scheletro: vola, ondeggia e si getta in avanti grazie al codice di EnemyMesh
     sciame: { file: 'sciame.glb', height: 0.42, clips: {}, rigid: true, lift: 0.75 },
     // attackSpeed = momento del colpo nel clip ritagliato / preavviso del nemico (defs.ts)
-    riflesso: { file: 'riflesso.glb', height: 2.1, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.0, attackSpeed: 0.87 },
-    bruto: { file: 'bruto.glb', height: 2.5, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 1.5, attackSpeed: 0.68 },
-    velato: { file: 'velato.glb', height: 2.0, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.6, attackSpeed: 0.84 },
-    eco: { file: 'eco.glb', height: 3.4, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.2, attackSpeed: 1.0 },
+    riflesso: { file: 'riflesso.glb', height: 2.1, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 1.0, attackSpeed: 0.87 },
+    bruto: { file: 'bruto.glb', height: 2.5, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 0.65, attackSpeed: 0.68 },
+    velato: { file: 'velato.glb', height: 2.0, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 1.4, attackSpeed: 0.84 },
+    eco: { file: 'eco.glb', height: 3.4, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 1.3, attackSpeed: 1.0 },
     // Città Sommersa
-    annegato: { file: 'annegato.glb', height: 1.85, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 2.0, attackSpeed: 0.81 },
+    annegato: { file: 'annegato.glb', height: 1.85, clips: { idle: 'idle', run: 'walk', attack: 'attack' }, runSpeed: 0.92, attackSpeed: 0.81 },
     // senza scheletro: nuota serpeggiando e scatta (EnemyMesh)
     anguilla: { file: 'anguilla.glb', height: 0.9, clips: {}, rigid: true, lift: 0.55 },
     // il boss: una campana che galleggia e dondola

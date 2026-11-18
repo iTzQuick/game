@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { CLASSES, NET } from '../game/constants';
 import { addPing, getGame, showEmote, useGame } from '../game/store';
 import { spawnRing, spawnSlash, spawnSparks } from '../fx/effects';
+import { splashStep } from '../fx/water';
 import { remoteBolt } from '../combat/abilities';
 import { combat } from '../combat/runtime';
 import { onCombat } from '../combat/bus';
@@ -128,6 +129,7 @@ function RemotePlayer({ id, name }: { id: string; name: string }) {
     pose.anim = s.a;
     pose.flags = getRoom()?.vitals.get(id)?.f ?? 0;
     combat.renderPos.set(id, { x: s.p[0], y: s.p[1], z: s.p[2] });
+    splashStep(id, s.p[0], s.p[2], s.s);
     tickPose(pose, dt);
   });
 
