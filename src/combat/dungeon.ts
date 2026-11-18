@@ -207,7 +207,40 @@ export function roomAt(d: Dungeon, x: number, z: number, margin = 0): number {
 export function walkable(d: Dungeon, x: number, z: number, margin = 0): boolean {
   const room = d.rooms.find((r) => inRect(r.rect, x, z, margin));
   if (room) return !room.pillars.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + margin);
-  return d.corridors.some((c) => inRect(c.rect, x, z, margin));
+  // i corridoi hanno muri solo ai lati: alle due estremità si entra nelle stanze, quindi lì il
+  // margine non si toglie (altrimenti sulla soglia della porta resterebbe una striscia "vietata")
+  return d.corridors.some((c) => x >= c.rect.x0 + margin && x <= c.rect.x1 - margin && z >= c.rect.z0 - margin && z <= c.rect.z1 + margin);
+}
+
+/**
+ * Tratto della Frattura in cui si trova un punto: stanza i → 2i, corridoio i → 2i + 1
+ * (le stanze e i corridoi si alternano in fila). -1 se è fuori.
+ */
+export function sectionAt(d: Dungeon, x: number, z: number): number {
+  for (const r of d.rooms) if (inRect(r.rect, x, z)) return 2 * r.i;
+  for (const c of d.corridors) if (inRect(c.rect, x, z)) return 2 * c.i + 1;
+  return -1;
+}
+
+/**
+ * Prossima tappa per andare da (x, z) a (tx, tz): se la meta è in un altro tratto, si passa
+ * dalla porta giusta (le stanze sono in fila, quindi basta andare avanti o indietro).
+ */
+export function nextWaypoint(d: Dungeon, x: number, z: number, tx: number, tz: number): [number, number] {
+  const from = sectionAt(d, x, z);
+  const to = sectionAt(d, tx, tz);
+  if (from < 0 || to < 0 || from === to) return [tx, tz];
+  const forward = to > from;
+  if (from % 2 === 0) {
+    // in una stanza: verso la porta nord (avanti) o sud (indietro), un passo oltre la soglia
+    const r = d.rooms[from / 2];
+    const doorX = forward ? r.doorNorthX : r.doorSouthX;
+    if (doorX === null) return [tx, tz];
+    return forward ? [doorX, r.rect.z0 - 0.8] : [doorX, r.rect.z1 + 0.8];
+  }
+  // in un corridoio: fino dentro la stanza dopo (o prima)
+  const c = d.corridors[(from - 1) / 2];
+  return forward ? [c.x, c.rect.z0 - 1.2] : [c.x, c.rect.z1 + 1.2];
 }
 
 /**

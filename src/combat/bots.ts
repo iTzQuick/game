@@ -12,7 +12,7 @@ import { SnapshotBuffer } from '../net/interpolation';
 import { NET } from '../game/constants';
 import { emitCombat, onCombat } from './bus';
 import { AB, CLASS_STATS, ENEMIES, REVIVE_RADIUS, REVIVE_SECONDS, isBoss } from './defs';
-import { inRect, walkable, type Dungeon } from './dungeon';
+import { inRect, nextWaypoint, walkable, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
 import type { EnemySim, PlayerView } from './sim';
@@ -366,29 +366,30 @@ export class BotManager {
 
   /** Cammina verso (tx, tz) fermandosi a `stop` metri; scivola lungo muri e colonne. */
   private walk(b: Bot, tx: number, tz: number, stop: number, o: { dungeon: Dungeon; cleared: number; dt: number }, speed: number) {
-    const dx = tx - b.x;
-    const dz = tz - b.z;
-    const d = Math.hypot(dx, dz);
+    const d = Math.hypot(tx - b.x, tz - b.z);
     if (d <= stop) {
       b.speed = 0;
+      b.stuck = Math.max(0, b.stuck - o.dt);
       return;
     }
-    const step = Math.min(d - stop, speed * o.dt);
-    const a = Math.atan2(dx, dz);
-    for (const off of [0, 0.5, -0.5, 1.1, -1.1, 1.6, -1.6]) {
-      const nx = b.x + Math.sin(a + off) * step;
-      const nz = b.z + Math.cos(a + off) * step;
-      if (this.canStand(nx, nz, o)) {
-        b.x = nx;
-        b.z = nz;
-        b.yaw = a + off;
-        b.speed = speed;
-        b.stuck = Math.max(0, b.stuck - o.dt);
-        return;
-      }
+    // se la meta è in un'altra stanza, si passa dalla porta
+    const [wx, wz] = nextWaypoint(o.dungeon, b.x, b.z, tx, tz);
+    const final = wx === tx && wz === tz;
+    const step = Math.min(final ? d - stop : Infinity, speed * o.dt);
+    const s = stepToward(b.x, b.z, wx, wz, step, (x, z) => this.canStand(x, z, o));
+    if (!s) {
+      b.speed = 0;
+      b.stuck += o.dt;
+      return;
     }
-    b.speed = 0;
-    b.stuck += o.dt;
+    // "bloccato" = non si avvicina alla tappa (anche se scivola di lato lungo un muro)
+    const before = Math.hypot(wx - b.x, wz - b.z);
+    b.x = s.x;
+    b.z = s.z;
+    b.yaw = s.yaw;
+    b.speed = speed;
+    if (Math.hypot(wx - b.x, wz - b.z) < before - step * 0.25) b.stuck = Math.max(0, b.stuck - o.dt);
+    else b.stuck += o.dt;
   }
 
   /** Riappare vicino a un punto (il capo, chi è a terra, il bersaglio): un piccolo sbuffo d'ombra. */
@@ -630,6 +631,23 @@ function nearestHuman(b: Bot, humans: PlayerView[]): PlayerView | null {
     }
   }
   return best ?? humans[0] ?? null;
+}
+
+/**
+ * Un passo verso (tx, tz): dritto, oppure un po' di lato se c'è un muro o una colonna.
+ * null se non si può fare nessun passo.
+ */
+export function stepToward(x: number, z: number, tx: number, tz: number, step: number, canStand: (x: number, z: number) => boolean): { x: number; z: number; yaw: number } | null {
+  const d = Math.hypot(tx - x, tz - z);
+  if (d < 1e-4) return { x, z, yaw: 0 };
+  const a = Math.atan2(tx - x, tz - z);
+  const len = Math.min(step, d);
+  for (const off of [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.57, -1.57]) {
+    const nx = x + Math.sin(a + off) * len;
+    const nz = z + Math.cos(a + off) * len;
+    if (canStand(nx, nz)) return { x: nx, z: nz, yaw: a + off };
+  }
+  return null;
 }
 
 /** Fuori combattimento (a terra da troppo): non si può più rialzare fino a fine stanza. */
