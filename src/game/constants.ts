@@ -128,12 +128,12 @@ export const MOVE = {
   accel: 40,
   gravity: 28,
   turnSpeed: 14,
-  /** schivata: 0,4 s a 11,5 m/s (4,6 m), quanto la capriola */
-  dodgeSpeed: 11.5,
-  dodgeTime: 0.4,
+  /** schivata: 0,5 s a 9,6 m/s (4,8 m), quanto la capriola */
+  dodgeSpeed: 9.6,
+  dodgeTime: 0.5,
   /** Istanti di invulnerabilità durante la schivata. */
-  dodgeIFrames: 0.3,
-  dodgeCooldown: 0.75,
+  dodgeIFrames: 0.35,
+  dodgeCooldown: 0.85,
   attackComboWindow: 0.55,
   attackDuration: 0.32,
   fallRespawnY: -40,

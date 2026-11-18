@@ -92,12 +92,13 @@ const ATTACK_KEYS: AttackKey[] = ['attack', 'attack2', 'attack3', 'abQ', 'abE', 
 export type ClipKey = 'idle' | 'run' | 'down' | 'dodge' | AttackKey;
 type ActionKey = ClipKey | 'runLower';
 /** Quanto dura la capriola disegnata (s): un po' più della schivata vera, così si vede tutta. */
-const DODGE_ANIM = 0.46;
+const DODGE_ANIM = 0.6;
 /**
- * Il clip della capriola (1,4 s) passa la prima parte ad abbassarsi piano: si parte da qui,
- * così la capriola vera cade mentre il personaggio scatta in avanti, non dopo.
+ * Del clip della capriola (Roll_Dodge_2, 2 s) si usa solo la capriola vera: dal tuffo
+ * (0,45 s) a quando è quasi in piedi (1,8 s). Prima si gira piano, dopo resta fermo.
  */
-const DODGE_CLIP_START = 0.55;
+const DODGE_CLIP_START = 0.45;
+const DODGE_CLIP_END = 1.8;
 /** Ossa della parte alta (scheletro Meshy): busto, collo, testa, spalle e braccia. */
 const UPPER_BODY = /Spine|neck|Neck|Head|Shoulder|Arm|Hand/;
 
@@ -269,9 +270,10 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       st.dodgeUntil = now + DODGE_ANIM * 1000;
       const dur = actions.dodge.getClip().duration;
       const start = dur > 1 ? Math.min(DODGE_CLIP_START, dur * 0.5) : 0;
+      const end = dur > DODGE_CLIP_END ? DODGE_CLIP_END : dur;
       actions.dodge.reset();
       actions.dodge.time = start;
-      actions.dodge.timeScale = (dur - start) / DODGE_ANIM;
+      actions.dodge.timeScale = (end - start) / DODGE_ANIM;
       if (st.active.has(actions.dodge)) actions.dodge.setEffectiveWeight(1);
     }
     st.wasRolling = rolling;
