@@ -8,9 +8,12 @@ import { getRoom } from '../net/room';
 import type { RunState } from '../net/roomLogic';
 import { emitCombat, onCombat } from './bus';
 import { ENEMIES, ENEMY_TYPES, WAVE_POOLS, pickMods, rng, scaling } from './defs';
-import { generateDungeon, inRect, roomAt, walkable, type DRoom, type Dungeon } from './dungeon';
+import { checkpoint, generateDungeon, inRect, roomAt, walkable, type DRoom, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
+import { botManager, setBotSim } from './bots';
+import { getGame } from '../game/store';
+import type { ClassId } from '../game/constants';
 import { EnemySim, type Focus, type Hit, type PlayerView } from './sim';
 import { FRAGMENTS, RARITIES, generateItem, missionReward, type Item } from '../progress/defs';
 import { groupKeeper } from '../progress/group';
@@ -147,6 +150,12 @@ export class HostDirector {
     return out;
   }
 
+  /** Quanti "valgono" i giocatori per le ondate: un compagno conta mezzo giocatore. */
+  private partySize(): number {
+    const room = getRoom()!;
+    return Math.max(1, Math.round(room.admittedIds.length + botManager.bots.length * 0.5));
+  }
+
   private updateRun(patch: Partial<RunState>) {
     getRoom()?.updateRoom((s) => (s.run ? { ...s, run: { ...s.run, ...patch } } : s));
   }
@@ -160,6 +169,10 @@ export class HostDirector {
       combat.hitSink = null;
       this.sim = null;
       this.runId = -1;
+      if (botManager.bots.length) {
+        botManager.bots = [];
+        setBotSim(null);
+      }
       return;
     }
     combat.hitSink = (from, hits) => this.applyHits(from, hits);
@@ -167,6 +180,8 @@ export class HostDirector {
     if (!run) {
       this.sim = null;
       this.runId = -1;
+      botManager.clear();
+      setBotSim(null);
       return;
     }
 
@@ -181,7 +196,7 @@ export class HostDirector {
       return;
     }
 
-    const players = this.players();
+    const humans = this.players();
     if (!this.sim || this.runId !== run.id) {
       this.dungeon = generateDungeon(run.seed, run.grado);
       const opts = run.mondo === CITTA ? { boss: run.boss ?? 'eco', pool: WAVE_POOLS[CITTA] } : {};
@@ -194,9 +209,19 @@ export class HostDirector {
       }
       this.nextWaveAt = 0;
       this.wipeAt = 0;
+      // compagni guidati dal computer nelle classi libere (se chi ospita li vuole)
+      setBotSim(this.sim);
+      const taken = room.admittedIds.map((id) => room.roomState.classes[id]).filter((c): c is ClassId => !!c);
+      const start = this.dungeon.rooms[0];
+      botManager.setup(run.id, room.admittedIds.length, taken, run.grado, { x: start.cx, z: start.cz }, getGame().settings.compagni);
     }
+    // i nemici vedono (e colpiscono) anche i compagni
+    const players = [...humans, ...botManager.views()];
 
-    if (run.phase === 'active') this.progress(run, players, now);
+    if (run.phase === 'active') this.progress(run, players, now, humans);
+    if (this.dungeon) {
+      botManager.tick({ sim: this.sim, dungeon: this.dungeon, cleared: run.cleared, fight: run.fight, grado: run.grado, humans, dt: Math.min(0.1, dtMs / 1000), now });
+    }
 
     for (const ev of this.sim.step(dtMs, now, players)) emitCombat(ev);
 
@@ -267,14 +292,14 @@ export class HostDirector {
     }
   }
 
-  private progress(run: RunState, players: PlayerView[], now: number) {
+  private progress(run: RunState, players: PlayerView[], now: number, humans: PlayerView[] = players) {
     const sim = this.sim!;
     const d = this.dungeon!;
     const room = getRoom()!;
 
     // missione "nessuno cade": basta un giocatore a terra
     const mis = run.missione;
-    if (mis && !mis.fallita && mis.obiettivo.tipo === 'nessuno_cade' && players.some((p) => !p.alive)) {
+    if (mis && !mis.fallita && mis.obiettivo.tipo === 'nessuno_cade' && humans.some((p) => !p.alive)) {
       this.updateRun({ missione: { ...mis, fallita: true } });
     }
 
@@ -283,7 +308,7 @@ export class HostDirector {
       if (idx >= d.rooms.length) return;
       const target = d.rooms[idx];
       if (players.some((p) => p.alive && inRect(target.rect, p.x, p.z, 1.2))) {
-        this.spawnWave(run, idx, 0, room.admittedIds.length, now);
+        this.spawnWave(run, idx, 0, this.partySize(), now);
         // la Prova a tempo: il conto alla rovescia parte entrando (Date.now: è lo stesso orologio per tutti)
         const prova = target.variant === 'prova' ? Date.now() + provaSeconds(run.grado) * 1000 : null;
         this.updateRun({ fight: idx, wave: 0, prova });
@@ -300,6 +325,8 @@ export class HostDirector {
         this.wipeAt = 0;
         sim.clear();
         this.traps = [];
+        const [cx, , cz] = checkpoint(d, run.cleared);
+        botManager.onWipe({ x: cx, z: cz });
         this.updateRun({ fight: -1, wave: 0, wipes: run.wipes + 1, prova: null });
       }
       return;
@@ -318,7 +345,7 @@ export class HostDirector {
       if (!this.nextWaveAt) this.nextWaveAt = now + 1500;
       else if (now >= this.nextWaveAt) {
         this.nextWaveAt = 0;
-        this.spawnWave(run, run.fight, run.wave + 1, room.admittedIds.length, now);
+        this.spawnWave(run, run.fight, run.wave + 1, this.partySize(), now);
         this.updateRun({ wave: run.wave + 1 });
       }
       return;
@@ -330,6 +357,7 @@ export class HostDirector {
     const better = v === 'campione' || v === 'tesoro';
     const provaOk = v === 'prova' && !!run.prova && Date.now() <= run.prova;
     this.traps = [];
+    botManager.onCleared();
     for (const id of room.admittedIds) {
       const items = last
         ? [generateItem(Math.random, run.grado, 2), generateItem(Math.random, run.grado)]

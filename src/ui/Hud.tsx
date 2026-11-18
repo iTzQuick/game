@@ -348,6 +348,10 @@ function SettingsPanel() {
           <input type="checkbox" checked={settings.autoAim} onChange={(e) => updateSettings({ autoAim: e.target.checked })} />
         </label>
         <label className="row">
+          <span>Compagni guidati dal computer quando siete in pochi (vale per chi ospita, dalla prossima Frattura)</span>
+          <input type="checkbox" checked={settings.compagni} onChange={(e) => updateSettings({ compagni: e.target.checked })} />
+        </label>
+        <label className="row">
           <span>Statistiche di rete e FPS</span>
           <input type="checkbox" checked={settings.showStats} onChange={(e) => updateSettings({ showStats: e.target.checked })} />
         </label>
