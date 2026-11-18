@@ -45,7 +45,7 @@ export interface Enemy {
   t: number;
   nextAttack: number;
   /** Attacco in preparazione: si ricorda la forma decisa all'inizio del preavviso. */
-  atk: { k: AttackKind; x: number; z: number; r: number } | null;
+  atk: { k: AttackKind; x: number; z: number; r: number; leap?: { fx: number; fz: number } } | null;
   target: string | null;
   stunUntil: number;
   /** barcolla dopo un colpo: per un attimo quasi non avanza */
@@ -58,7 +58,9 @@ export interface Enemy {
   pulled: boolean;
   /** Campione: più grosso, più forte, lascia un oggetto migliore */
   elite?: boolean;
-  boss?: { nextNova: number; summoned: number; enraged: boolean };
+  boss?: { nextNova: number; summoned: number; enraged: boolean; nextLeap: number };
+  /** non prende danni fino a questo momento (il boss mentre cambia fase) */
+  invulnUntil?: number;
 }
 
 export type AttackKind = 'cone' | 'circle' | 'shot' | 'nova';
@@ -91,6 +93,21 @@ export interface Hit {
 }
 
 export const EXECUTE_THRESHOLD = 0.35;
+
+/** Boss: il balzo con onda d'urto e la seconda fase (a metà vita). */
+export const BOSS = {
+  firstLeap: 7000,
+  leapEvery: 9000,
+  /** durata del volo (ms): è anche il preavviso a terra */
+  leapMs: 1150,
+  leapRadius: 3.6,
+  shockRadius: 6.5,
+  /** l'onda d'urto arriva poco dopo l'atterraggio */
+  shockDelay: 480,
+  phaseInvuln: 1500,
+  phaseWindup: 1300,
+  phaseRadius: 7.5,
+};
 
 /** Il Campione: quanta vita, danni e velocità in più, e quanti nemici normali sostituisce. */
 export const ELITE = { hp: 3.5, dmg: 1.35, speed: 1.1, budget: 3 };
@@ -153,7 +170,7 @@ export class EnemySim {
       veiled,
       pulled: false,
     };
-    if (isBoss(type)) e.boss = { nextNova: now + 4000, summoned: 0, enraged: false };
+    if (isBoss(type)) e.boss = { nextNova: now + 4000, summoned: 0, enraged: false, nextLeap: now + BOSS.firstLeap };
     this.enemies.set(e.id, e);
     return e;
   }
@@ -218,6 +235,7 @@ export class EnemySim {
     if (e.veiled && now >= e.revealedUntil) f |= EF.veiled;
     if (e.boss?.enraged) f |= EF.enraged;
     if (e.pulled) f |= EF.pulled;
+    if (e.ai === 'windup' && e.atk?.leap) f |= EF.leap;
     if (e.elite) f |= EF.elite;
     return f;
   }
@@ -231,6 +249,8 @@ export class EnemySim {
       e.revealedUntil = Math.max(e.revealedUntil, now + h.mk);
     }
     let dmg = Math.max(0, h.d);
+    // il boss che cambia fase non prende danni (il ruggito)
+    if (e.invulnUntil && now < e.invulnUntil) dmg = 0;
     if (e.veiled && now >= e.revealedUntil) dmg *= VEILED_DMG_TAKEN;
     if (now < e.markUntil) dmg *= AB.rivelazione.dmgTaken;
     if (h.x && e.hp / e.maxHp <= EXECUTE_THRESHOLD) dmg = e.hp;
@@ -317,7 +337,7 @@ export class EnemySim {
       }
       e.target = target?.id ?? null;
 
-      if (stunned) {
+      if (stunned && !e.atk?.leap) {
         if (e.ai === 'windup') {
           e.ai = 'chase';
           e.atk = null;
@@ -338,6 +358,14 @@ export class EnemySim {
             e.x += Math.sin(atk.r) * def.lunge;
             e.z += Math.cos(atk.r) * def.lunge;
             e.vx = e.vz = 0;
+          }
+          // atterraggio del balzo: è arrivato, e dall'impatto parte l'onda d'urto
+          if (atk?.leap) {
+            e.x = atk.x;
+            e.z = atk.z;
+            e.vx = e.vz = 0;
+            this.confine(e);
+            ev.push({ t: 'ea', id: e.id, k: 'circle', x: round(e.x), z: round(e.z), r: 0, rad: BOSS.shockRadius, arc: 0, d: BOSS.shockDelay, dmg: Math.round(def.dmg * this.scale.dmg * 0.55) });
           }
           e.ai = 'recover';
           e.atk = null;
@@ -362,12 +390,21 @@ export class EnemySim {
         e.yaw = Math.atan2(ux, uz);
 
         if (now >= e.nextAttack) {
-          const windupMs = def.windup * 1000 * (e.boss?.enraged ? 0.8 : 1);
+          let windupMs = def.windup * 1000 * (e.boss?.enraged ? 0.8 : 1);
           let atk: Enemy['atk'] = null;
           let rad = def.hitRadius;
           let arc = def.hitArc;
+          let dmgMul = 1;
           if (e.boss) {
-            if (now >= e.boss.nextNova) {
+            if (target && now >= e.boss.nextLeap && dist > 3.5) {
+              // balzo: vola sul bersaglio e atterra con un'onda d'urto
+              e.boss.nextLeap = now + BOSS.leapEvery * (e.boss.enraged ? 0.65 : 1);
+              atk = { k: 'circle', x: target.x, z: target.z, r: e.yaw, leap: { fx: e.x, fz: e.z } };
+              rad = BOSS.leapRadius;
+              arc = 0;
+              windupMs = BOSS.leapMs;
+              dmgMul = 1.3;
+            } else if (now >= e.boss.nextNova) {
               e.boss.nextNova = now + BOSS_NOVA_EVERY * (e.boss.enraged ? 0.75 : 1);
               atk = { k: 'nova', x: e.x, z: e.z, r: e.yaw };
               rad = 1.5;
@@ -387,7 +424,7 @@ export class EnemySim {
             e.ai = 'windup';
             e.atk = atk;
             e.t = now + windupMs;
-            e.nextAttack = now + windupMs + def.recover * 1000 * this.scale.recover + (def.attack === 'shot' ? 600 : 0);
+            e.nextAttack = now + windupMs + def.recover * 1000 * this.scale.recover + (def.attack === 'shot' ? 600 : 0) + (atk.leap ? BOSS.shockDelay : 0);
             wantX = wantZ = 0;
             ev.push({
               t: 'ea',
@@ -399,7 +436,7 @@ export class EnemySim {
               rad,
               arc,
               d: Math.round(windupMs),
-              dmg: Math.round(def.dmg * this.scale.dmg * eliteDmg(e)),
+              dmg: Math.round(def.dmg * this.scale.dmg * eliteDmg(e) * dmgMul),
             });
           }
         }
@@ -440,11 +477,29 @@ export class EnemySim {
       e.x += e.vx * dt;
       e.z += e.vz * dt;
       this.confine(e);
+      // in volo verso il punto del balzo
+      if (e.ai === 'windup' && e.atk?.leap) {
+        const k = Math.min(1, Math.max(0, 1 - (e.t - now) / BOSS.leapMs));
+        const s = k * k * (3 - 2 * k);
+        e.x = e.atk.leap.fx + (e.atk.x - e.atk.leap.fx) * s;
+        e.z = e.atk.leap.fz + (e.atk.z - e.atk.leap.fz) * s;
+        e.vx = e.vz = 0;
+      }
 
       // il boss chiama rinforzi e si infuria
       if (e.boss) {
         const frac = e.hp / e.maxHp;
-        if (!e.boss.enraged && frac <= 0.5) e.boss.enraged = true;
+        if (!e.boss.enraged && frac <= 0.5) {
+          // seconda fase: ruggisce (per un attimo non prende danni) e un'onda d'urto attorno
+          e.boss.enraged = true;
+          e.invulnUntil = now + BOSS.phaseInvuln;
+          e.ai = 'windup';
+          e.atk = { k: 'circle', x: e.x, z: e.z, r: e.yaw };
+          e.t = now + BOSS.phaseWindup;
+          e.nextAttack = e.t + 900;
+          e.boss.nextLeap = now + BOSS.phaseWindup + 2500;
+          ev.push({ t: 'ea', id: e.id, k: 'circle', x: round(e.x), z: round(e.z), r: 0, rad: BOSS.phaseRadius, arc: 0, d: BOSS.phaseWindup, dmg: Math.round(ENEMIES[e.type].dmg * this.scale.dmg * 1.2) });
+        }
         const thresholds = [0.7, 0.35];
         if (e.boss.summoned < thresholds.length && frac <= thresholds[e.boss.summoned]) {
           e.boss.summoned++;

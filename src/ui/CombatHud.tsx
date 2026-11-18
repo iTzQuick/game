@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from 'react';
 import { CLASSES, type ClassId } from '../game/constants';
 import { useGame } from '../game/store';
 import { abilityState } from '../combat/abilities';
-import { CLASS_STATS, DOWN_SECONDS, ENEMIES, MODS, REVIVE_SECONDS, isBoss } from '../combat/defs';
+import { CLASS_STATS, DOWN_SECONDS, EF, ENEMIES, MODS, REVIVE_SECONDS, isBoss } from '../combat/defs';
 import { VARIANT_INFO, combatRoomCount } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
 import { press } from '../game/input';
 import { Icon } from './Icon';
 import { BoonStrip } from './BoonPanel';
+import { slowActive } from '../combat/feel';
 import { useProgress } from '../progress/store';
 import { classProgress } from '../progress/model';
 import { nomeNemico, secondiRimasti, testoObiettivo } from '../narrator/core';
@@ -76,6 +77,12 @@ export function CombatHud({ touch }: { touch: boolean }) {
       )}
       {!touch && cls && <AbilityBar cls={cls} />}
       {inRun && !combat.alive && <DownOverlay />}
+      {inRun && slowActive(now) && (
+        <div className="slowmo" aria-hidden>
+          <b>Schivata perfetta!</b>
+          <small>Il prossimo colpo fa il doppio dei danni</small>
+        </div>
+      )}
       {run?.phase === 'complete' && (
         <div className="run-complete">
           <b>La Frattura si richiude</b>
@@ -157,7 +164,7 @@ export function TopStatus() {
       {inRun && <BossBar />}
       {combo && (
         <div className="combo-banner" key={combo.t0}>
-          <small>COMBO</small> {combo.name}
+          <small>{combo.label ?? 'COMBO'}</small> {combo.name}
         </div>
       )}
     </>
@@ -209,10 +216,15 @@ function BossBar() {
   const boss = [...combat.enemies.values()].find((e) => isBoss(e.type));
   if (!boss) return null;
   return (
-    <div className="boss-bar">
-      <span>{ENEMIES[boss.type].name}</span>
+    <div className={`boss-bar${boss.flags & EF.enraged ? ' phase2' : ''}`}>
+      <span>
+        {ENEMIES[boss.type].name}
+        {boss.flags & EF.enraged ? ' · seconda fase' : ''}
+      </span>
       <div className="boss-track">
         <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
+        {/* a metà vita cambia fase */}
+        <i className="boss-notch" aria-hidden />
       </div>
     </div>
   );

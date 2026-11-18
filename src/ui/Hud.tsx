@@ -368,6 +368,7 @@ function HelpPanel({ touch }: { touch: boolean }) {
     ['Muoversi', 'WASD', 'Joystick a sinistra'],
     ['Telecamera', 'Mouse (clicca per catturarlo)', 'Trascina a destra'],
     ['Attacco', 'Click sinistro', 'Pulsante grande'],
+    ['Colpo caricato', 'Tieni premuto il click sinistro, poi lascia', 'Tieni premuto il pulsante grande, poi lascia'],
     ['Schivata', 'Spazio', 'Pulsante sopra l’attacco'],
     ['Abilità 1–3', 'Q, E, R', 'Tre pulsanti ad arco'],
     ['Ultra', 'F', 'Pulsante che si illumina quando è carica'],

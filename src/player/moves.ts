@@ -17,7 +17,8 @@ export type MoveStyle =
   | 'push' // spinta in avanti
   | 'shoot' // colpo a distanza: rinculo
   | 'raise' // si solleva un poco, braccia al cielo
-  | 'rise'; // si alza in volo girando (Ultra)
+  | 'rise' // si alza in volo girando (Ultra)
+  | 'heavy'; // colpo caricato: si solleva e schianta l'arma a terra
 
 type Slot = 'Q' | 'E' | 'R' | 'F';
 
@@ -46,6 +47,7 @@ export const MOVE_DURATION: Record<MoveStyle, number> = {
   shoot: 0.3,
   raise: 0.75,
   rise: 0.95,
+  heavy: 0.62,
 };
 
 /** Spostamenti del corpo: rotazioni (radianti) attorno a x (in avanti) e y, altezza e passo in avanti (metri), scala. */
@@ -105,7 +107,22 @@ export function bodyOffset(style: MoveStyle, n: number, k: number): BodyOffset {
       return { rx: -0.16 * b, ry: 0, y: 0.38 * b, z: 0, s: 1 };
     case 'rise':
       return { rx: -0.1 * b, ry: Math.PI * 2 * easeOut(k), y: 0.95 * b, z: 0, s: 1 };
+    case 'heavy': {
+      // prima si inarca e sale (fino al 35%), poi si getta in avanti e giù sul colpo
+      const up = k < 0.35 ? easeOut(k / 0.35) : 1 - Math.min(1, (k - 0.35) / 0.2);
+      const down = k < 0.35 ? 0 : bump((k - 0.35) / 0.65);
+      return { rx: -0.3 * up + 0.55 * down, ry: 0, y: 0.45 * up - 0.12 * down, z: 0.6 * down, s: 1 + 0.06 * down };
+    }
   }
+}
+
+/** Mentre si carica il colpo: un po' all'indietro e più basso, sempre di più (`level` da 0 a 1). */
+export function holdOffset(level: number, t: number): BodyOffset {
+  if (level < 0) return ZERO;
+  const l = Math.min(1, level);
+  // a carica piena trema appena, come un arco teso
+  const shiver = l >= 1 ? Math.sin(t * 60) * 0.015 : 0;
+  return { rx: -0.2 * l + shiver, ry: 0, y: -0.1 * l, z: -0.08 * l, s: 1 };
 }
 
 /** Schivata: uno scatto basso in avanti (non più la capriola). `k` va da 0 a 1. */

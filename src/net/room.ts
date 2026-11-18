@@ -31,6 +31,8 @@ type Vec3 = [number, number, number];
 export type GameEvent =
   | { t: 'act'; a: 'attack'; n: number; p: Vec3; r: number }
   | { t: 'act'; a: 'dodge'; p: Vec3; r: number }
+  /** colpo caricato (n = carica da 0 a 1) */
+  | { t: 'act'; a: 'heavy'; n: number; p: Vec3; r: number }
   | { t: 'emote'; e: number }
   | { t: 'ping'; p: Vec3 }
   | CombatMsg;

@@ -2491,3 +2491,71 @@ table.controls th.hl {
     opacity: 0.55;
   }
 }
+
+/* --- Schivata perfetta: bordi freddi e scritta, finché dura il rallentatore ---------- */
+.slowmo {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: calc(22vh + var(--safe-t));
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(120, 190, 255, 0.28) 100%);
+  animation: slowmo-in 0.18s ease-out;
+}
+.slowmo b {
+  font-family: Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(1.3rem, 4vw, 2rem);
+  color: #e9f6ff;
+  text-shadow: 0 0 18px rgba(120, 190, 255, 0.9);
+  letter-spacing: 0.04em;
+}
+.slowmo small {
+  color: #cfe8ff;
+  font-size: 0.85rem;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.8);
+}
+@keyframes slowmo-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .slowmo {
+    animation: none;
+  }
+}
+
+/* --- Boss: tacca a metà vita (seconda fase) e barra infuriata --------------------------- */
+.boss-track {
+  position: relative;
+}
+.boss-notch {
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.75);
+}
+.boss-bar.phase2 .boss-fill {
+  background: linear-gradient(90deg, #ff2a5e, #ff9a3c);
+  animation: boss-rage 0.9s ease-in-out infinite alternate;
+}
+.boss-bar.phase2 span {
+  color: #ffb4a0;
+}
+@keyframes boss-rage {
+  to {
+    filter: brightness(1.35);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boss-bar.phase2 .boss-fill {
+    animation: none;
+  }
+}

@@ -101,7 +101,7 @@ interface GameStore {
   emotes: Record<string, { e: number; t0: number }>;
   pointerLocked: boolean;
   /** Combo di coppia appena riuscita (striscione al centro dello schermo). */
-  combo: { name: string; t0: number } | null;
+  combo: { name: string; t0: number; label?: string } | null;
   /** Pannello della progressione aperto (personaggio, zaino, base…). */
   panel: Panel;
   /** Edificio scelto nel pannello della base. */

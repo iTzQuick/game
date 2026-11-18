@@ -125,6 +125,8 @@ export const EF = {
   enraged: 16,
   pulled: 32,
   elite: 64,
+  /** il boss è in volo (balzo) */
+  leap: 128,
 } as const;
 
 // --- Fratture -------------------------------------------------------------------

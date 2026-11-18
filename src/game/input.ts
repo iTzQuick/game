@@ -24,6 +24,8 @@ export const input = {
   look: { dx: 0, dy: 0 },
   zoom: 0,
   pressed: new Set<Action>(),
+  /** Il tasto d'attacco è tenuto premuto (per l'attacco caricato). */
+  attackHeld: false,
   /** Richiesta di ping in coordinate schermo normalizzate (-1..1). */
   ping: null as { x: number; y: number } | null,
 };
@@ -109,7 +111,13 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
     else if (e.code >= 'Digit1' && e.code <= 'Digit4') press(`emote${Number(e.code.slice(5)) - 1}` as Action);
   };
   const onKeyUp = (e: KeyboardEvent) => input.keys.delete(e.code);
-  const onBlur = () => input.keys.clear();
+  const onBlur = () => {
+    input.keys.clear();
+    input.attackHeld = false;
+  };
+  const onMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) input.attackHeld = false;
+  };
 
   const onMouseDown = (e: MouseEvent) => {
     if (controlsBlocked()) return;
@@ -130,6 +138,7 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
       return;
     }
     press('attack');
+    input.attackHeld = true;
   };
   const onMouseMove = (e: MouseEvent) => {
     if (document.pointerLockElement !== canvas) return;
@@ -145,6 +154,7 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
+  window.addEventListener('mouseup', onMouseUp);
   canvas.addEventListener('mousedown', onMouseDown);
   canvas.addEventListener('auxclick', onAux);
   canvas.addEventListener('wheel', onWheel, { passive: true });
@@ -154,6 +164,7 @@ export function installDesktopInput(canvas: HTMLElement): () => void {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
+    window.removeEventListener('mouseup', onMouseUp);
     canvas.removeEventListener('mousedown', onMouseDown);
     canvas.removeEventListener('auxclick', onAux);
     canvas.removeEventListener('wheel', onWheel);

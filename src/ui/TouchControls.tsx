@@ -133,7 +133,23 @@ export function TouchControls() {
         <button className="tbtn dodge" onPointerDown={btn('dodge')} aria-label="Schivata">
           <Icon name="schivata" size={50} />
         </button>
-        <button className="tbtn attack" onPointerDown={btn('attack')} aria-label="Attacco">
+        <button
+          className="tbtn attack"
+          onPointerDown={(e) => {
+            btn('attack')(e);
+            // tenendo premuto si carica il colpo: il dito può scivolare un po' senza perderlo
+            input.attackHeld = true;
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId);
+            } catch {
+              /* non serve */
+            }
+          }}
+          onPointerUp={() => (input.attackHeld = false)}
+          onPointerCancel={() => (input.attackHeld = false)}
+          onLostPointerCapture={() => (input.attackHeld = false)}
+          aria-label="Attacco (tieni premuto per caricare)"
+        >
           <Icon name="attacco" size={84} />
         </button>
         <AbilityButtons />

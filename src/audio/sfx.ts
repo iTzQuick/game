@@ -189,6 +189,52 @@ export const sfx = {
     tone(c, 'sine', 1320, 1340, 0.08, 0.005, 0.18, 0.07);
   },
 
+  /** inizia la carica del colpo: un suono che sale per circa un secondo */
+  charge() {
+    const c = audio();
+    if (!c || !gate('charge', 200)) return;
+    tone(c, 'sawtooth', 110, 330, 0.035, 0.6, 0.45);
+    tone(c, 'sine', 220, 660, 0.06, 0.8, 0.3);
+    hiss(c, 'bandpass', 400, 2200, 2, 0.05, 0.8, 0.3);
+  },
+
+  /** carica piena */
+  ready() {
+    const c = audio();
+    if (!c || !gate('ready', 300)) return;
+    tone(c, 'triangle', 1320, 1320, 0.12, 0.004, 0.35);
+    tone(c, 'sine', 1980, 1980, 0.06, 0.004, 0.4, 0.04);
+  },
+
+  /** colpo caricato: un botto profondo, più forte con la carica */
+  heavy(level = 1) {
+    const c = audio();
+    if (!c || !gate('heavy', 120)) return;
+    const k = 0.6 + 0.4 * Math.min(1, level);
+    tone(c, 'sine', 120, 28, 0.7 * k, 0.004, 0.45 + 0.25 * k);
+    hiss(c, 'lowpass', 2600, 120, 0.7, 0.45 * k, 0.003, 0.4 + 0.3 * k);
+    tone(c, 'square', 70, 40, 0.06 * k, 0.004, 0.25);
+  },
+
+  /** schivata perfetta: un soffio che si ritira e un rintocco cristallino */
+  perfect() {
+    const c = audio();
+    if (!c || !gate('perfect', 400)) return;
+    hiss(c, 'bandpass', 3000, 400, 1.5, 0.18, 0.25, 0.2);
+    tone(c, 'sine', 1760, 1700, 0.1, 0.01, 0.9, 0.05);
+    tone(c, 'sine', 2640, 2600, 0.05, 0.01, 0.8, 0.08);
+    tone(c, 'sine', 70, 50, 0.3, 0.01, 0.5);
+  },
+
+  /** ruggito del boss (seconda fase) */
+  roar() {
+    const c = audio();
+    if (!c || !gate('roar', 1000)) return;
+    tone(c, 'sawtooth', 90, 55, 0.18, 0.15, 1.1);
+    tone(c, 'square', 135, 80, 0.06, 0.15, 1.0);
+    hiss(c, 'lowpass', 900, 200, 0.8, 0.3, 0.12, 1.1);
+  },
+
   /** a terra */
   down() {
     const c = audio();

@@ -5,11 +5,12 @@ import { Billboard } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { spawnPuff, spawnRing, spawnSparks } from '../fx/effects';
+import { dustColor, spawnPuff, spawnRing, spawnSmoke, spawnSparks } from '../fx/effects';
 import { sfx } from '../audio/sfx';
 import { EF, ENEMIES, isBoss, type EnemyType } from './defs';
-import { hitStop, shake } from './feel';
-import { DYING_MS, combat, setDeathFx, setTrapFx, type CZone } from './runtime';
+import { hitStop, shake, zoomKick } from './feel';
+import { DYING_MS, combat, setDeathFx, setPhaseFx, setTeleFx, setTrapFx, showCombo, type CZone } from './runtime';
+import { BOSS } from './sim';
 import { ENEMY_MODELS, newCtrl } from '../player/RiggedModel';
 import { ModelOr } from '../player/models';
 
@@ -31,6 +32,7 @@ setDeathFx((x, z, type) => {
   spawnPuff(x, 1, z, c);
   spawnRing(x, z, c, boss ? 8 : 2.6, boss ? 0.9 : 0.5);
   spawnSparks(x, boss ? 2 : 1, z, c, boss ? 60 : 16, boss ? 2.2 : 1.1);
+  spawnSmoke(x, 0.3, z, boss ? 16 : 3, boss ? 2.2 : 0.7, boss ? dustColor() : c);
   sfx.death(boss);
   // la scossa si sente solo se si è vicini; il boss scuote tutti
   const p = combat.selfPos;
@@ -47,6 +49,28 @@ setTrapFx((x, z, r) => {
   spawnSparks(x, 0.1, z, '#ffb0a0', 12, 1.2);
   const p = combat.selfPos;
   if (Math.hypot(x - p.x, z - p.z) < 6) sfx.hit(0.6, false);
+});
+
+// un attacco nemico arriva a terra: polvere; quelli grandi (balzi e onde d'urto dei boss) scuotono
+setTeleFx((t) => {
+  if (t.k !== 'circle') return;
+  const big = t.rad >= 3.4;
+  spawnRing(t.x, t.z, big ? '#ffb08a' : '#ff8a8a', t.rad, big ? 0.45 : 0.25);
+  spawnSparks(t.x, 0.15, t.z, big ? '#d9b48c' : '#b9a38f', big ? 26 : 6, big ? 1.6 : 0.7);
+  if (!big) return;
+  spawnSmoke(t.x, 0.2, t.z, 12, t.rad * 0.45, dustColor());
+  const p = combat.selfPos;
+  const d = Math.hypot(t.x - p.x, t.z - p.z);
+  shake(d < t.rad + 3 ? 0.55 : 0.2);
+  if (d < t.rad + 3) zoomKick(0.25);
+  sfx.heavy(d < t.rad + 3 ? 0.8 : 0.4);
+});
+
+// il boss si infuria: striscione, ruggito e scossa
+setPhaseFx((type) => {
+  showCombo(`${ENEMIES[type].name} si infuria!`, 'SECONDA FASE');
+  shake(0.7);
+  sfx.roar();
 });
 
 /** Ridisegna la lista quando cambiano gli id (non a ogni frame). */
@@ -102,7 +126,7 @@ function EnemyMesh({ id }: { id: number }) {
   /** aura dorata del Campione e barra della vita sopra la testa */
   const eliteRef = useRef<THREE.Group>(null);
   const barRef = useRef<THREE.Group>(null);
-  const hitRef = useRef({ flash: 0, t0: -1e9, dx: 0, dz: -1 });
+  const hitRef = useRef({ flash: 0, t0: -1e9, dx: 0, dz: -1, leapStart: 0 });
   // modello 3D animato (Higgsfield) per i tipi che ce l'hanno
   const modelDef = ENEMY_MODELS[type];
   const [modelReady, setModelReady] = useState(false);
@@ -271,6 +295,24 @@ function EnemyMesh({ id }: { id: number }) {
         rec.scale.set(1 + sq, 1 - sq, 1 + sq);
       }
       if (elite) rec.scale.multiplyScalar(ELITE_SCALE);
+      // balzo del boss: un grande arco in aria fino al punto d'atterraggio
+      if (e.flags & EF.leap) {
+        if (!hit.leapStart) hit.leapStart = now;
+        const k = Math.min(1, (now - hit.leapStart) / BOSS.leapMs);
+        rec.position.y += Math.sin(Math.PI * k) * 5.5;
+        rec.rotation.x += Math.sin(Math.PI * k) * -0.35;
+      } else hit.leapStart = 0;
+      // colpo caricato: vola in alto e ricade, ribaltandosi all'indietro (i grossi molto meno)
+      const la = e.launchAt ? (now - e.launchAt) / 700 : 2;
+      if (la < 1) {
+        const h = Math.sin(la * Math.PI);
+        const k = boss ? 0.12 : elite || type === 'bruto' ? 0.45 : 1;
+        rec.position.y += h * 1.4 * k;
+        rec.position.x += lx * la * 0.6 * k;
+        rec.position.z += lz * la * 0.6 * k;
+        rec.rotation.x += lz * h * 0.9 * k;
+        rec.rotation.z -= lx * h * 0.9 * k;
+      }
     }
   });
 
@@ -620,7 +662,7 @@ function Projectiles() {
       for (const p of combat.bolts) {
         if (n >= PB_POOL) break;
         dummy.position.set(p.x, p.y, p.z);
-        dummy.scale.setScalar(p.kind === 'onda' ? 2.6 : p.kind === 'dardo' ? 1.4 : 1);
+        dummy.scale.setScalar(p.kind === 'carica' ? 3.4 + Math.sin(now / 40) * 0.3 : p.kind === 'onda' ? 2.6 : p.kind === 'dardo' ? 1.4 : 1);
         dummy.updateMatrix();
         b.setMatrixAt(n, dummy.matrix);
         b.setColorAt(n, color.set(p.color));

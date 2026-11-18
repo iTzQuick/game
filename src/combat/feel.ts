@@ -47,8 +47,64 @@ export function shakeOffset(dt: number, out: { x: number; y: number; z: number; 
   return out;
 }
 
+// --- telecamera che si avvicina sui colpi forti ---------------------------------------
+
+let zoom = 0;
+
+/** La telecamera si avvicina di colpo e torna indietro (0 niente, 1 molto). */
+export function zoomKick(amount: number) {
+  if (!enabled) return;
+  zoom = Math.min(1, Math.max(zoom, reduced() ? amount * 0.3 : amount));
+}
+
+/** Quanto è avvicinata ora (0..1); si spegne da sola in circa mezzo secondo. */
+export function zoomAmount(dt: number): number {
+  const z = zoom;
+  zoom = Math.max(0, zoom - dt * 2.2);
+  return z * z * (3 - 2 * z);
+}
+
+// --- rallentatore (schivata perfetta) ------------------------------------------------
+
+let slowUntil = 0;
+let slowFactor = 1;
+
+/** Rallenta il mondo intorno al giocatore per `ms` millisecondi. */
+export function slowMo(ms: number, factor = 0.3) {
+  slowUntil = performance.now() + ms;
+  slowFactor = factor;
+}
+
+// i nemici, visti da qui, restano un po' indietro durante il rallentatore e poi recuperano
+let warp = 0;
+
+/** Da chiamare una volta per fotogramma: quanto (ms) i nemici sono mostrati "nel passato". */
+export function tickWarp(dtSec: number, now = performance.now()): number {
+  const sp = worldSpeed(now);
+  if (sp < 1) warp += dtSec * 1000 * (1 - sp);
+  else warp = Math.max(0, warp - dtSec * 1000 * 2.5);
+  warp = Math.min(warp, 900);
+  return warp;
+}
+
+/** Il rallentatore è in corso (per l'avviso sullo schermo). */
+export function slowActive(now = performance.now()): boolean {
+  return now < slowUntil;
+}
+
+/** Velocità del mondo ora (1 = normale). */
+export function worldSpeed(now = performance.now()): number {
+  if (now >= slowUntil) return 1;
+  // gli ultimi 150 ms tornano piano alla velocità normale
+  const left = slowUntil - now;
+  return left < 150 ? slowFactor + (1 - slowFactor) * (1 - left / 150) : slowFactor;
+}
+
 /** Per i test. */
 export function resetFeel() {
   stopUntil = 0;
   trauma = 0;
+  zoom = 0;
+  slowUntil = 0;
+  warp = 0;
 }

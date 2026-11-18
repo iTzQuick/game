@@ -5,9 +5,10 @@ import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { displayName, useGame, type Ping } from '../game/store';
+import { displayName, getGame, useGame, type Ping } from '../game/store';
 import { combat } from '../combat/runtime';
 import { orbState } from '../combat/boons';
+import { CITTA } from '../citta/core';
 
 type Vec3 = [number, number, number];
 
@@ -130,7 +131,7 @@ export function spawnSparks(x: number, y: number, z: number, color: string, n: n
     o.p.set(x, y, z);
     o.v.set(vx, (1.5 + Math.random() * 4) * power, vz);
     o.max = o.life = 0.35 + Math.random() * 0.35 * power;
-    o.s = (0.035 + Math.random() * 0.045) * Math.min(1.8, power);
+    o.s = (0.035 + Math.random() * 0.045) * Math.min(1.25, power);
     o.color.set(color);
   }
 }
@@ -179,6 +180,81 @@ function Sparks() {
   return <instancedMesh ref={ref} args={[geo, mat, SPARKS]} frustumCulled={false} />;
 }
 const UP = new THREE.Vector3(0, 1, 0);
+
+// --- fumo e polvere (colpi caricati, atterraggi dei boss) ----------------------------
+
+interface Puff {
+  life: number;
+  max: number;
+  p: THREE.Vector3;
+  v: THREE.Vector3;
+  s0: number;
+  s1: number;
+  color: THREE.Color;
+}
+const SMOKE = 48;
+const puffs: Puff[] = Array.from({ length: SMOKE }, () => ({ life: 0, max: 1, p: new THREE.Vector3(), v: new THREE.Vector3(), s0: 1, s1: 2, color: new THREE.Color() }));
+let puffNext = 0;
+
+/** Colore della polvere dei colpi: sul fondo della Città Sommersa sono nuvole di bolle chiare. */
+export const dustColor = () => (getGame().room.run?.mondo === CITTA ? '#cdf6ff' : '#8f8576');
+
+/** Nuvole di fumo o polvere che si allargano, salgono piano e svaniscono. */
+export function spawnSmoke(x: number, y: number, z: number, n: number, size = 1, color = '#8f8576') {
+  for (let i = 0; i < n; i++) {
+    const o = puffs[puffNext];
+    puffNext = (puffNext + 1) % SMOKE;
+    const a = Math.random() * Math.PI * 2;
+    const sp = (0.8 + Math.random() * 1.6) * size;
+    o.p.set(x + Math.sin(a) * 0.3 * size, y + Math.random() * 0.3, z + Math.cos(a) * 0.3 * size);
+    o.v.set(Math.sin(a) * sp, 0.4 + Math.random() * 0.7, Math.cos(a) * sp);
+    o.max = o.life = 0.7 + Math.random() * 0.6;
+    o.s0 = (0.5 + Math.random() * 0.4) * size;
+    o.s1 = o.s0 * (2.2 + Math.random());
+    o.color.set(color);
+  }
+}
+
+function Smoke() {
+  const refs = useRef<(THREE.Sprite | null)[]>([]);
+  const tex = useMemo(() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d')!;
+    const grd = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+    grd.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }, []);
+  const mats = useMemo(() => puffs.map(() => new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })), [tex]);
+  useFrame((_, dtRaw) => {
+    const dt = Math.min(dtRaw, 0.1);
+    puffs.forEach((o, i) => {
+      const sp = refs.current[i];
+      if (!sp) return;
+      if (o.life > 0) o.life -= dt;
+      sp.visible = o.life > 0;
+      if (!sp.visible) return;
+      o.v.multiplyScalar(1 - dt * 2.2);
+      o.p.addScaledVector(o.v, dt);
+      const k = 1 - o.life / o.max;
+      sp.position.copy(o.p);
+      sp.scale.setScalar(o.s0 + (o.s1 - o.s0) * Math.sqrt(k));
+      mats[i].color.copy(o.color);
+      mats[i].opacity = 0.55 * (1 - k) * Math.min(1, k * 6);
+    });
+  });
+  return (
+    <>
+      {puffs.map((_, i) => (
+        <sprite key={i} ref={(el) => void (refs.current[i] = el)} material={mats[i]} visible={false} />
+      ))}
+    </>
+  );
+}
 
 // --- fulmini (Scintilla del Crocevia) ---------------------------------------------
 
@@ -250,6 +326,64 @@ function Zaps() {
       {lines.map((l, i) => (
         <primitive key={i} object={l} />
       ))}
+    </>
+  );
+}
+
+// --- colpo in carica: cerchio a terra che si riempie, scintille che salgono, luce ------
+
+/** Lo aggiorna LocalPlayer a ogni fotogramma: level -1 = non si carica. */
+export const chargeFx = { level: -1, x: 0, y: 0, z: 0, color: '#ffd25a' };
+
+function ChargeFx() {
+  const ring = useRef<THREE.Mesh>(null);
+  const fill = useRef<THREE.Mesh>(null);
+  const light = useRef<THREE.PointLight>(null);
+  const mats = useMemo(
+    () => ({
+      ring: new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+      fill: new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+    }),
+    [],
+  );
+  const nextEmber = useRef(0);
+  useFrame(({ clock }) => {
+    const l = chargeFx.level;
+    const on = l >= 0;
+    const t = clock.elapsedTime;
+    for (const m of [ring.current, fill.current]) if (m) m.visible = on;
+    if (light.current) light.current.visible = on;
+    if (!on) return;
+    const full = l >= 1;
+    mats.ring.color.set(chargeFx.color);
+    mats.fill.color.set(chargeFx.color);
+    mats.ring.opacity = full ? 0.75 + Math.sin(t * 14) * 0.2 : 0.5;
+    mats.fill.opacity = 0.18 + 0.3 * l;
+    ring.current!.position.set(chargeFx.x, chargeFx.y + 0.06, chargeFx.z);
+    ring.current!.rotation.z = t * 2;
+    fill.current!.position.set(chargeFx.x, chargeFx.y + 0.05, chargeFx.z);
+    fill.current!.scale.setScalar(Math.max(0.01, l));
+    light.current!.position.set(chargeFx.x, chargeFx.y + 1.2, chargeFx.z);
+    light.current!.color.set(chargeFx.color);
+    light.current!.intensity = (full ? 6 + Math.sin(t * 14) * 2 : 4 * l) + 0.5;
+    // scintille che salgono attorno, sempre più fitte
+    const now = performance.now();
+    if (now > nextEmber.current) {
+      nextEmber.current = now + (full ? 45 : 110 - 60 * l);
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.6 + Math.random() * 0.6;
+      spawnSparks(chargeFx.x + Math.sin(a) * r, chargeFx.y + 0.2, chargeFx.z + Math.cos(a) * r, chargeFx.color, 1, 0.45 + 0.3 * l);
+    }
+  });
+  return (
+    <>
+      <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]} material={mats.ring} visible={false}>
+        <ringGeometry args={[1.25, 1.4, 6]} />
+      </mesh>
+      <mesh ref={fill} rotation={[-Math.PI / 2, 0, 0]} material={mats.fill} visible={false}>
+        <circleGeometry args={[1.25, 32]} />
+      </mesh>
+      <pointLight ref={light} distance={6} decay={1.6} visible={false} />
     </>
   );
 }
@@ -420,6 +554,8 @@ export function Effects() {
       <Sparks />
       <Zaps />
       <Orbs />
+      <ChargeFx />
+      <Smoke />
       <Pings />
     </group>
   );
