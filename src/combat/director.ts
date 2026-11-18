@@ -11,7 +11,7 @@ import { ENEMIES, ENEMY_TYPES, WAVE_POOLS, pickMods, rng, scaling } from './defs
 import { checkpoint, generateDungeon, inRect, roomAt, walkable, type DRoom, type Dungeon } from './dungeon';
 import { VF, type CombatMsg } from './protocol';
 import { combat } from './runtime';
-import { botManager, setBotSim } from './bots';
+import { botManager, isOut, setBotSim } from './bots';
 import { getGame } from '../game/store';
 import type { ClassId } from '../game/constants';
 import { EnemySim, type Focus, type Hit, type PlayerView } from './sim';
@@ -318,8 +318,10 @@ export class HostDirector {
     }
     const fightRoom = d.rooms[run.fight];
 
-    // sconfitta di gruppo: tutti a terra
-    if (players.length && players.every((p) => !p.alive)) {
+    // sconfitta di gruppo: tutti a terra; oppure nessun giocatore in piedi e nessuno che si possa
+    // ancora rialzare (i compagni da soli non bastano: si riparte dal checkpoint, senza aspettare)
+    const humansOut = humans.length > 0 && humans.every((p) => !p.alive) && humans.every((p) => isOut(p.id));
+    if (players.length && (players.every((p) => !p.alive) || humansOut)) {
       if (!this.wipeAt) this.wipeAt = now + 1500;
       else if (now >= this.wipeAt) {
         this.wipeAt = 0;

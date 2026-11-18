@@ -202,6 +202,20 @@ export class BotManager {
     this.takeHits(now);
     const dmgMul = 1 + 0.15 * (o.grado - 1);
 
+    // qualcuno è a terra (e si può ancora rialzare)? ci va il compagno più vicino, e sempre il Custode
+    const downed = o.humans.find((h) => !h.alive && !isOut(h.id));
+    let rescuer: Bot | null = null;
+    if (downed) {
+      let bd = Infinity;
+      for (const b of this.bots) {
+        const d = Math.hypot(b.x - downed.x, b.z - downed.z);
+        if (!b.downAt && d < bd) {
+          bd = d;
+          rescuer = b;
+        }
+      }
+    }
+
     for (const b of this.bots) {
       if (b.beam && now > b.beamUntil) b.beam = '';
       if (b.downAt) {
@@ -219,16 +233,12 @@ export class BotManager {
       }
 
       const brain = BRAIN[b.cls];
-      // 1. qualcuno è a terra? si corre a rialzarlo (il giocatore vede il compagno vicino e si rialza)
-      const room = getRoom();
-      const downed = o.humans.find((h) => {
-        if (h.alive) return false;
-        const dead = h.id === room?.self.id ? combat.me.dead : ((room?.vitals.get(h.id)?.f ?? 0) & VF.dead) !== 0;
-        return !dead;
-      });
       const enemies = [...sim.enemies.values()].filter((e) => o.fight >= 0 && e.room === o.fight);
-      if (downed && enemies.length < 6) {
-        this.walk(b, downed.x, downed.z, 1, o, CLASS_STATS[b.cls].speed);
+      // 1. si corre a rialzare chi è a terra, anche in mezzo ai nemici (il giocatore vede il compagno
+      //    vicino e si rialza da solo); se la strada è bloccata, riappare accanto a lui
+      if (downed && (b === rescuer || b.cls === 'custode')) {
+        if (b.stuck > 1 || Math.hypot(downed.x - b.x, downed.z - b.z) > 20) this.blinkNear(b, downed, o, 1.2);
+        else this.walk(b, downed.x, downed.z, 0.9, o, CLASS_STATS[b.cls].speed * 1.15);
         continue;
       }
 
@@ -249,6 +259,9 @@ export class BotManager {
         } else if (d > reach * 0.85) this.walk(b, target.x, target.z, brain.keep, o, CLASS_STATS[b.cls].speed);
         else b.speed = 0;
         if (d <= reach + 0.3) b.yaw = yaw;
+
+        // incastrato contro un muro o una colonna: riappare vicino al bersaglio
+        if (b.stuck > 1.2) this.blinkNear(b, target, o, brain.arc === 0 ? brain.keep : 1.6);
 
         if (this.useAbility(b, target, enemies, o, dmgMul, now)) continue;
         if (d <= reach + 0.3 && now >= b.nextAtk) this.attack(b, target, enemies, dmgMul, now);
@@ -378,12 +391,12 @@ export class BotManager {
     b.stuck += o.dt;
   }
 
-  /** Riappare accanto al capo (troppo lontano o bloccato): un piccolo sbuffo d'ombra. */
-  private blinkNear(b: Bot, leader: PlayerView, o: TickArgs) {
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      const x = leader.x + Math.sin(a) * 2.2;
-      const z = leader.z + Math.cos(a) * 2.2;
+  /** Riappare vicino a un punto (il capo, chi è a terra, il bersaglio): un piccolo sbuffo d'ombra. */
+  private blinkNear(b: Bot, p: { x: number; z: number }, o: TickArgs, r = 2.2) {
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + Math.atan2(b.x - p.x, b.z - p.z);
+      const x = p.x + Math.sin(a) * r;
+      const z = p.z + Math.cos(a) * r;
       if (this.canStand(x, z, o)) {
         b.x = x;
         b.z = z;
@@ -617,6 +630,13 @@ function nearestHuman(b: Bot, humans: PlayerView[]): PlayerView | null {
     }
   }
   return best ?? humans[0] ?? null;
+}
+
+/** Fuori combattimento (a terra da troppo): non si può più rialzare fino a fine stanza. */
+export function isOut(id: string): boolean {
+  const room = getRoom();
+  if (id === room?.self.id) return combat.me.dead;
+  return ((room?.vitals.get(id)?.f ?? 0) & VF.dead) !== 0;
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
