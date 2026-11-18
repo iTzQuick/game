@@ -333,7 +333,16 @@ async function fratturaTests(browser) {
       c.me.ultra = 100;
       return down;
     });
-    if (wasDown) console.log('  (era a terra prima della prova: rialzato)');
+    if (wasDown) {
+      console.log('  (era a terra prima della prova: rialzato)');
+      // il gioco deve prima rimetterlo in piedi (animazione, stato): poi si provano i tasti
+      await sleep(500);
+      await g(p, () => {
+        const c = window.__fratture.combat;
+        c.me.invulnUntil = performance.now() + 4000;
+        c.me.ultra = 100;
+      });
+    }
     for (const k of ['q', 'e', 'r', 'f']) {
       await p.keyboard.press(k);
       await sleep(150);

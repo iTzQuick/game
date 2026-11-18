@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { CLASSES, NET } from '../game/constants';
 import { addPing, getGame, showEmote, useGame } from '../game/store';
-import { spawnSlash } from '../fx/effects';
+import { spawnRing, spawnSlash, spawnSparks } from '../fx/effects';
 import { remoteBolt } from '../combat/abilities';
 import { combat } from '../combat/runtime';
 import { onCombat } from '../combat/bus';
@@ -61,6 +61,22 @@ export function RemotePlayers() {
             pose.attackSlot = null;
             if (cls && CLASSES[cls].ranged) remoteBolt(cls, ev.p, ev.r);
             else spawnSlash(ev.p, ev.r, color, ev.n);
+          } else if (ev.a === 'heavy') {
+            // colpo caricato di un compagno: la stessa mossa e lo schianto (il danno lo manda lui)
+            pose.attackT = 0;
+            pose.attackN = 3;
+            pose.attackSlot = null;
+            const ranged = !!cls && CLASSES[cls].ranged;
+            pose.attackStyle = ranged ? 'shoot' : 'heavy';
+            if (ranged) remoteBolt(cls, ev.p, ev.r);
+            else {
+              const x = ev.p[0] + Math.sin(ev.r) * 1.6;
+              const z = ev.p[2] + Math.cos(ev.r) * 1.6;
+              setTimeout(() => {
+                spawnRing(x, z, color, 2.6 + 1.3 * ev.n, 0.5);
+                spawnSparks(x, 0.3, z, color, 24, 1.4 + ev.n);
+              }, 260);
+            }
           } else {
             pose.dodgeT = 0;
           }

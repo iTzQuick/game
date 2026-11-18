@@ -15,7 +15,7 @@ import { Hud } from '../ui/Hud';
 import { TouchControls } from '../ui/TouchControls';
 import { Crocevia } from '../world/Crocevia';
 import { Frattura } from '../world/Frattura';
-import { installDesktopInput, press } from './input';
+import { input, installDesktopInput, press } from './input';
 import { isTouchDevice, useGame } from './store';
 import { frameStats } from '../ui/Stats';
 import { preloadModels } from '../player/RiggedModel';
@@ -31,7 +31,7 @@ import { groupKeeper } from '../progress/group';
 import { initRewards } from '../progress/rewards';
 import { getProgress, mutate } from '../progress/store';
 
-if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press, groupKeeper, getProgress, mutate, myBoons, addBoon, botViews });
+if (window.__fratture) Object.assign(window.__fratture, { local: localDebug, combat, director, runRequest, press, groupKeeper, getProgress, mutate, myBoons, addBoon, botViews, input });
 
 export function Game() {
   const quality = useGame((s) => s.settings.quality);

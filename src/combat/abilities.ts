@@ -5,13 +5,13 @@
 // ricevono un messaggio 'ab' e vedono l'effetto.
 
 import { CLASSES, type ClassId } from '../game/constants';
-import { abilityMove, type MoveStyle } from '../player/moves';
+import { MOVE_DURATION, abilityMove, type MoveStyle } from '../player/moves';
 import { getGame } from '../game/store';
 import { getRoom } from '../net/room';
-import { spawnFlash, spawnPuff, spawnRing, spawnSlash, spawnSparks, spawnZap, addBeam } from '../fx/effects';
+import { dustColor, spawnFlash, spawnPuff, spawnRing, spawnSlash, spawnSmoke, spawnSparks, spawnZap, addBeam } from '../fx/effects';
 import { BOON, boonLevel, orbState } from './boons';
 import { sfx } from '../audio/sfx';
-import { hitStop, shake } from './feel';
+import { hitStop, shake, zoomKick } from './feel';
 import { emitCombat } from './bus';
 import { AB, CLASS_STATS, EF, ENEMIES, ULTRA_GAIN, ULTRA_LOCK, ULTRA_MAX, isBoss } from './defs';
 
@@ -122,6 +122,8 @@ export function tickAbilities(ctx: PlayerCtx) {
     hitArea(ctx.x, ctx.z, AB.bastione.blastRadius, { d: dmg, noCharge: true, raw: true, push: 14, weight: 2 });
     spawnFlash(ctx.x, ctx.z, '#ffd25a', AB.bastione.blastRadius, 0.5);
     spawnSparks(ctx.x, 1, ctx.z, '#ffd25a', 40, 1.8);
+    spawnSmoke(ctx.x, 0.2, ctx.z, 12, 1.8, dustColor());
+    zoomKick(0.5);
     shake(0.7);
     hitStop(140);
     emitAb(ctx, 'F', { to: [ctx.x, ctx.z] }, true);
@@ -194,9 +196,11 @@ interface HitOpts {
   push?: number;
   /** quanto "pesa" il colpo: pausa all'impatto e scossa (0 = niente, 1 = normale) */
   weight?: number;
+  /** il nemico vola in aria (solo grafica, per chi colpisce) */
+  launch?: boolean;
 }
 
-type HitArgs = Omit<Hit, 'e' | 'kb'> & { crit?: boolean; noCharge?: boolean; push?: number; weight?: number };
+type HitArgs = Omit<Hit, 'e' | 'kb'> & { crit?: boolean; noCharge?: boolean; push?: number; weight?: number; launch?: boolean };
 
 function hitEnemy(e: EnemyView, o: HitArgs) {
   const p = combat.selfPos;
@@ -210,6 +214,7 @@ function hitEnemy(e: EnemyView, o: HitArgs) {
   const gelo = boonLevel('gelo');
   const sg = gelo && o.d > 0 ? BOON.gelo.base + BOON.gelo.perLevel * gelo : undefined;
   combat.queueHit({ e: e.id, d: o.d, st: o.st, tn: o.tn, mk: o.mk, x: o.x, kb, sg }, !o.noCharge);
+  if (o.launch) e.launchAt = performance.now();
   if (o.d > 0) {
     lastHitByMe.set(e.id, performance.now());
     combat.number(e.x, 2.1, e.z, o.d, o.crit ? 'crit' : 'dmg');
@@ -400,6 +405,89 @@ export function basicAttack(ctx: PlayerCtx, comboN: number) {
 
 let attackCount = 0;
 
+/** Schivata perfetta: il prossimo attacco fa il doppio dei danni ed è sempre critico. */
+export function perfectCounter() {
+  nextMul = Math.max(nextMul, 2);
+  nextCrit = true;
+}
+
+/** Attacco caricato: quanto conta la carica. */
+export const CHARGE = {
+  /** dopo quanto, tenendo premuto, inizia la carica (s) */
+  start: 0.28,
+  /** quanto ci vuole per caricarlo tutto (s) */
+  full: 0.9,
+};
+
+/**
+ * Colpo caricato, lasciando il tasto: in mischia uno schianto davanti (i nemici volano
+ * via e restano storditi un attimo), a distanza un dardo enorme che attraversa tutti.
+ * `level` da 0 a 1.
+ */
+export function heavyAttack(ctx: PlayerCtx, level: number) {
+  currentClass = ctx.cls;
+  const l = Math.max(0, Math.min(1, level));
+  const stats = CLASS_STATS[ctx.cls ?? 'none'];
+  const ranged = ctx.cls ? CLASSES[ctx.cls].ranged : false;
+  const { yaw } = aimYaw(ctx, ranged ? 22 : stats.reach + 5);
+  ctx.setYaw(yaw);
+  ctx.attackAnim(3, ranged ? 'shoot' : 'heavy');
+  const color = colorOf(ctx.cls);
+  const base = stats.basic[stats.basic.length - 1] * (1.8 + 2.7 * l);
+  const fromVeil = consumeVeil();
+  const mul = nextMul * (fromVeil ? AB.velo.mul + P('veloDanno') : 1);
+  const forcedCrit = nextCrit || fromVeil;
+  nextMul = 1;
+  nextCrit = false;
+  if (ranged) {
+    const sc = scale(base * mul, 'basic', ctx.cls);
+    combat.bolts.push({
+      x: ctx.x + Math.sin(yaw) * 0.8,
+      z: ctx.z + Math.cos(yaw) * 0.8,
+      y: ctx.y + 1.25,
+      dx: Math.sin(yaw),
+      dz: Math.cos(yaw),
+      spd: 30,
+      dmg: sc.d,
+      born: performance.now(),
+      life: 18 / 30,
+      mine: true,
+      color,
+      kind: 'carica',
+      bounces: 0,
+      hit: new Set(),
+      alive: true,
+      portalCd: 0,
+      mul: 1,
+      crit: sc.crit || forcedCrit,
+    });
+    spawnFlash(ctx.x + Math.sin(yaw) * 0.8, ctx.z + Math.cos(yaw) * 0.8, color, 1.2 + l, 0.25);
+    shake(0.2 + 0.25 * l);
+  } else {
+    // lo schianto cade un passo e mezzo davanti
+    const cx = ctx.x + Math.sin(yaw) * 1.6;
+    const cz = ctx.z + Math.cos(yaw) * 1.6;
+    const r = 2.6 + 1.3 * l;
+    // arriva quando l'arma tocca terra, non quando si preme
+    later(MOVE_DURATION.heavy * 0.42 * 1000, () => {
+      spawnRing(cx, cz, color, r, 0.5);
+      spawnFlash(cx, cz, color, r * 0.6, 0.3);
+      spawnSparks(cx, 0.3, cz, color, Math.round(14 + 14 * l), 1.2 + 0.6 * l);
+      spawnSmoke(cx, 0.2, cz, Math.round(6 + 6 * l), 1 + 0.6 * l, dustColor());
+      for (const e of [...combat.enemies.values()]) {
+        if (!e.ready || Math.hypot(e.x - cx, e.z - cz) > r + ENEMIES[e.type].radius) continue;
+        const sc = scale(base * mul, 'basic', ctx.cls);
+        hitEnemy(e, { d: sc.d, crit: sc.crit || forcedCrit, push: 9 + 10 * l, weight: 1.6 + 1.4 * l, st: Math.round(250 + 650 * l), launch: true });
+      }
+      hitStop(80 + 90 * l);
+      shake(0.35 + 0.45 * l);
+      zoomKick(0.35 + 0.5 * l);
+      sfx.heavy(l);
+    });
+  }
+  getRoom()?.emit({ t: 'act', a: 'heavy', n: Math.round(l * 100) / 100, p: [ctx.x, ctx.y, ctx.z], r: yaw });
+}
+
 function nearestEnemy(x: number, z: number, range: number, skip?: number): EnemyView | null {
   let best: EnemyView | null = null;
   let bd = range;
@@ -559,7 +647,10 @@ export function castAbility(slot: AbilitySlot, ctx: PlayerCtx): boolean {
   // ogni abilità ha il suo movimento del corpo
   ctx.attackAnim(1, abilityMove(ctx.cls, slot), slot);
   sfx.cast(slot === 'F');
-  if (slot === 'F') shake(0.25);
+  if (slot === 'F') {
+    shake(0.25);
+    zoomKick(0.35);
+  }
   const color = colorOf(ctx.cls);
   const key = `${ctx.cls}:${slot}` as const;
 

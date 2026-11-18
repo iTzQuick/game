@@ -3,15 +3,15 @@
 // nemico viene colpito non accende anche gli altri.
 
 import { useGLTF } from '@react-three/drei';
-import { createPortal, useFrame } from '@react-three/fiber';
+import { createPortal, useFrame, useThree } from '@react-three/fiber';
 import { Fragment, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { ClassId } from '../game/constants';
 import type { EnemyType } from '../combat/defs';
-import { MOVE_DURATION, bodyOffset, dodgeOffset, type MoveStyle } from './moves';
+import { MOVE_DURATION, bodyOffset, dodgeOffset, holdOffset, type MoveStyle } from './moves';
 import type { AbilitySlot } from '../combat/protocol';
-import { animScale } from '../combat/feel';
+import { animScale, worldSpeed } from '../combat/feel';
 
 export type Move = 'idle' | 'run' | 'down';
 
@@ -49,6 +49,8 @@ export interface GearDef {
   pos: [number, number, number];
   rot?: [number, number, number];
   node: ReactNode;
+  /** scia durante gli attacchi: dall'altezza `a` alla `b` (metri, lungo l'arma) */
+  trail?: { a: number; b: number };
 }
 
 /** Comandi per l'animazione, aggiornati a ogni frame da chi usa il modello. */
@@ -64,6 +66,12 @@ export interface ModelCtrl {
   flash: number;
   /** rosso del preavviso d'attacco (nemici) */
   charge: number;
+  /** colpo in carica: da 0 a 1 (-1 se non si carica) */
+  hold: number;
+  /** colore del bagliore di carica (rgb 0-1); senza, rosso come i nemici */
+  tint?: [number, number, number];
+  /** il proprio personaggio: non rallenta con il rallentatore della schivata perfetta */
+  self?: boolean;
   /** 1 = pieno; meno di 1 = trasparente (i Velati sotto il velo) */
   opacity: number;
   /** movimento del corpo dell'ultimo attacco e numero del colpo nella combo */
@@ -73,7 +81,7 @@ export interface ModelCtrl {
   slot: AbilitySlot | null;
 }
 
-export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0, opacity: 1, style: 'swing', combo: 1, slot: null });
+export const newCtrl = (): ModelCtrl => ({ move: 'idle', speed: 0, attack: 0, visible: true, roll: -1, flash: 0, charge: 0, hold: -1, opacity: 1, style: 'swing', combo: 1, slot: null });
 
 const url = (file: string) => `${import.meta.env.BASE_URL}models/${file}`;
 
@@ -201,6 +209,8 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
 
   const roll = useRef<THREE.Group>(null);
   const act = useRef<THREE.Group>(null);
+  /** estremità delle armi per la scia (una coppia per ogni arma che ne ha una) */
+  const trailEnds = useRef<{ a: THREE.Object3D; b: THREE.Object3D }[]>([]);
   const state = useRef({
     active: new Set<THREE.AnimationAction>(),
     attack: 0,
@@ -293,7 +303,7 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     if (actions.run) actions.run.timeScale = runScale;
     if (actions.runLower) actions.runLower.timeScale = runScale;
     // pausa all'impatto: le animazioni quasi si fermano, e l'attacco dura quel tanto di più
-    const slow = animScale(now);
+    const slow = animScale(now) * (ctrl.self ? 1 : worldSpeed(now));
     if (slow < 1 && attacking) {
       st.attackUntil += dt * 1000 * (1 - slow);
       st.attackStart += dt * 1000 * (1 - slow);
@@ -313,8 +323,10 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
       if (o && st.atkKey !== 'attack') o = { rx: o.rx * 0.35, ry: 0, y: o.y * 0.5, z: o.z * 0.5, s: 1 + (o.s - 1) * 0.5 };
       // con la capriola vera il corpo non si china in più
       const d = ctrl.roll >= 0 && !actions.dodge ? dodgeOffset(ctrl.roll) : null;
-      g.rotation.set((o?.rx ?? 0) + (d?.rx ?? 0), o?.ry ?? 0, 0);
-      g.position.set(0, (o?.y ?? 0) + (d?.y ?? 0), o?.z ?? 0);
+      // in carica (e non mentre attacca): un po' indietro e più basso
+      const h = ctrl.hold >= 0 && !attacking ? holdOffset(ctrl.hold, now / 1000) : null;
+      g.rotation.set((o?.rx ?? 0) + (d?.rx ?? 0) + (h?.rx ?? 0), o?.ry ?? 0, 0);
+      g.position.set(0, (o?.y ?? 0) + (d?.y ?? 0) + (h?.y ?? 0), (o?.z ?? 0) + (h?.z ?? 0));
       g.scale.setScalar((o?.s ?? 1) * (d?.s ?? 1));
     }
     // trasparenza (Velati): si accende solo quando serve, per non pesare sugli altri
@@ -335,7 +347,8 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
           m.emissive.setRGB(1, 1, 1);
           m.emissiveIntensity = ctrl.flash * 0.8;
         } else if (ctrl.charge > 0) {
-          m.emissive.setRGB(1, 0.1, 0.15);
+          if (ctrl.tint) m.emissive.setRGB(ctrl.tint[0], ctrl.tint[1], ctrl.tint[2]);
+          else m.emissive.setRGB(1, 0.1, 0.15);
           m.emissiveIntensity = ctrl.charge * 0.6;
         } else {
           m.emissiveIntensity = 0;
@@ -357,9 +370,11 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
           {createPortal(
             <group position={a.position} quaternion={a.quaternion} scale={a.scale}>
               {a.node}
+              {a.trail && <TrailMarkers ends={trailEnds.current[i] ?? (trailEnds.current[i] = { a: new THREE.Object3D(), b: new THREE.Object3D() })} trail={a.trail} />}
             </group>,
             a.bone,
           )}
+          {a.trail && trailEnds.current[i] && <WeaponTrail ends={trailEnds.current[i]} ctrl={ctrl} state={state} />}
         </Fragment>
       ))}
     </group>
@@ -372,7 +387,7 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
  */
 function anchorGear(scene: THREE.Object3D, gear: GearDef[], metersPerUnit: number) {
   scene.updateMatrixWorld(true);
-  const out: { bone: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion; scale: number; node: ReactNode }[] = [];
+  const out: { bone: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion; scale: number; node: ReactNode; trail?: GearDef['trail'] }[] = [];
   for (const g of gear) {
     const bone = scene.getObjectByName(g.bone);
     if (!bone) {
@@ -391,6 +406,7 @@ function anchorGear(scene: THREE.Object3D, gear: GearDef[], metersPerUnit: numbe
       quaternion: qi.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...(g.rot ?? [0, 0, 0])))),
       scale: 1 / k,
       node: g.node,
+      trail: g.trail,
     });
   }
   return out;
@@ -422,4 +438,93 @@ export function PropModel({ name, height, maxWidth, y = 0 }: { name: string; hei
       <primitive object={scene} />
     </group>
   );
+}
+
+// --- scia delle armi -------------------------------------------------------------------
+
+type TrailEnds = { a: THREE.Object3D; b: THREE.Object3D };
+
+/** Due punti invisibili lungo l'arma: da qui si legge dove passa la lama. */
+function TrailMarkers({ ends, trail }: { ends: TrailEnds; trail: { a: number; b: number } }) {
+  return (
+    <>
+      <primitive object={ends.a} position={[0, trail.a, 0]} />
+      <primitive object={ends.b} position={[0, trail.b, 0]} />
+    </>
+  );
+}
+
+const TRAIL_N = 14;
+
+/**
+ * Nastro di luce dietro la lama mentre si attacca (colore della classe; più lungo e
+ * luminoso nel colpo caricato). Vive nella scena, in coordinate del mondo.
+ */
+function WeaponTrail({ ends, ctrl, state }: { ends: TrailEnds; ctrl: ModelCtrl; state: { current: { attackUntil: number; style: MoveStyle } } }) {
+  const scene = useThree((s) => s.scene);
+  const t = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    const pos = new Float32Array(TRAIL_N * 6);
+    const col = new Float32Array(TRAIL_N * 6);
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const idx: number[] = [];
+    for (let i = 0; i < TRAIL_N - 1; i++) {
+      const a = 2 * i;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+    g.setIndex(idx);
+    const m = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const mesh = new THREE.Mesh(g, m);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    const pts = Array.from({ length: TRAIL_N }, () => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), t: -1e9 }));
+    return { mesh, pos, col, pts, head: 0, color: new THREE.Color() };
+  }, []);
+  useEffect(
+    () => () => {
+      t.mesh.geometry.dispose();
+      (t.mesh.material as THREE.Material).dispose();
+    },
+    [t],
+  );
+  useFrame(() => {
+    const now = performance.now();
+    const st = state.current;
+    const heavy = st.style === 'heavy';
+    const life = heavy ? 280 : 170;
+    if (now < st.attackUntil && ends.a.parent && ends.b.parent) {
+      ends.a.updateWorldMatrix(true, false);
+      ends.b.updateWorldMatrix(true, false);
+      t.head = (t.head + 1) % TRAIL_N;
+      const p = t.pts[t.head];
+      p.a.setFromMatrixPosition(ends.a.matrixWorld);
+      p.b.setFromMatrixPosition(ends.b.matrixWorld);
+      p.t = now;
+    }
+    const tint = ctrl.tint;
+    t.color.setRGB(tint?.[0] ?? 1, tint?.[1] ?? 1, tint?.[2] ?? 1);
+    let any = false;
+    let last: { a: THREE.Vector3; b: THREE.Vector3 } | null = null;
+    for (let k = 0; k < TRAIL_N; k++) {
+      const p = t.pts[(t.head - k + TRAIL_N) % TRAIL_N];
+      const age = (now - p.t) / life;
+      const f = age < 1 ? (1 - age) * (1 - k / TRAIL_N) : 0;
+      // i punti spenti si schiacciano sull'ultimo acceso: niente strisce verso il centro del mondo
+      const src = f > 0 ? p : (last ?? p);
+      if (f > 0) {
+        any = true;
+        last = p;
+      }
+      t.pos.set([src.a.x, src.a.y, src.a.z, src.b.x, src.b.y, src.b.z], k * 6);
+      const i = f * (heavy ? 1.5 : 0.95);
+      t.col.set([t.color.r * i * 0.25, t.color.g * i * 0.25, t.color.b * i * 0.25, t.color.r * i, t.color.g * i, t.color.b * i], k * 6);
+    }
+    t.mesh.visible = any && ctrl.visible;
+    if (any) {
+      t.mesh.geometry.getAttribute('position').needsUpdate = true;
+      t.mesh.geometry.getAttribute('color').needsUpdate = true;
+    }
+  });
+  return createPortal(<primitive object={t.mesh} />, scene);
 }

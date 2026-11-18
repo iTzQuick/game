@@ -13,19 +13,23 @@ import { addPing, advanceDialog, controlsBlocked, getGame, isTouchDevice, setGam
 import { getRoom } from '../net/room';
 import type { AnimState } from '../net/interpolation';
 import { fratturaInteractables, nearestInteractable, RIFT } from '../world/layout';
-import { basicAttack, castAbility, dodgeBoon, onVarcoPass, resetAbilities, tickAbilities, type PlayerCtx } from '../combat/abilities';
+import { CHARGE, basicAttack, castAbility, dodgeBoon, heavyAttack, onVarcoPass, perfectCounter, resetAbilities, tickAbilities, type PlayerCtx } from '../combat/abilities';
+import { chargeFx, spawnRing } from '../fx/effects';
 import { BOON, boonLevel, boonsForRun, modsWithBoons } from '../combat/boons';
 import { CLASS_STATS } from '../combat/defs';
 import { checkpoint, generateDungeon } from '../combat/dungeon';
 import type { AbilitySlot } from '../combat/protocol';
 import { combat } from '../combat/runtime';
 import { emitCombat } from '../combat/bus';
-import { shakeOffset } from '../combat/feel';
+import { shakeOffset, slowMo, zoomAmount, zoomKick } from '../combat/feel';
 import { sfx } from '../audio/sfx';
 import { modsFor } from '../progress/store';
 import { isBuilt } from '../progress/model';
 import { Avatar, newPose, tickPose } from './Avatar';
 import type { MoveStyle } from './moves';
+
+/** Schivata perfetta: quanto dura il rallentatore e quanto rallenta il mondo. */
+const PERFECT = { slowMs: 900, factor: 0.3 };
 
 /** Fascio della telecamera: scarti laterali e verticali (metri) dal punto guardato. */
 const CAM_RAYS: [number, number][] = [
@@ -94,6 +98,9 @@ export function LocalPlayer() {
       dodgeCd: 0,
       dodgeDir: new THREE.Vector3(),
       attackCd: 0,
+      /** da quanto si tiene premuto l'attacco (s), -1 se non lo si tiene */
+      holdT: -1,
+      wasHeld: false,
       comboN: 0,
       comboTimer: 0,
       lastSend: 0,
@@ -375,6 +382,15 @@ export function LocalPlayer() {
       combat.me.invulnUntil = Math.max(combat.me.invulnUntil, now + MOVE.dodgeIFrames * 1000);
       sfx.dodge();
       dodgeBoon(sim.pos.x, sim.pos.z);
+      // schivata perfetta: proprio mentre un colpo stava per arrivare
+      if (inRun && combat.perfectDodge(sim.pos.x, sim.pos.z, now)) {
+        slowMo(PERFECT.slowMs, PERFECT.factor);
+        combat.me.invulnUntil = Math.max(combat.me.invulnUntil, now + PERFECT.slowMs);
+        perfectCounter();
+        sfx.perfect();
+        zoomKick(0.3);
+        spawnRing(sim.pos.x, sim.pos.z, '#ffe9a8', 3, 0.5);
+      }
       if (wishLen > 0.1) sim.dodgeDir.copy(tmp.wish);
       else sim.dodgeDir.set(Math.sin(sim.yaw), 0, Math.cos(sim.yaw));
       sim.yaw = Math.atan2(sim.dodgeDir.x, sim.dodgeDir.z);
@@ -389,6 +405,7 @@ export function LocalPlayer() {
       sim.vel.copy(sim.dodgeDir).multiplyScalar(MOVE.dodgeSpeed);
     } else {
       if (pose.attackT >= 0 && !ranged) speedTarget *= 0.35; // rallenta mentre colpisce
+      if (pose.charge >= 0) speedTarget *= 0.45; // e mentre carica il colpo
       const tx = tmp.wish.x * speedTarget;
       const tz = tmp.wish.z * speedTarget;
       const a = 1 - Math.exp(-MOVE.accel * dt * 0.25);
@@ -403,6 +420,43 @@ export function LocalPlayer() {
       sim.attackCd = ranged ? 0.42 : 0.26;
       ctx.yaw = sim.yaw;
       basicAttack(ctx, sim.comboN);
+    }
+
+    // attacco caricato: tenendo premuto l'arma si carica, lasciando parte il colpo
+    const held = input.attackHeld && alive && !blocked && !!classId;
+    if (held && !sim.wasHeld) sim.holdT = 0;
+    sim.wasHeld = held;
+    if (held && sim.holdT >= 0 && sim.dodgeLeft <= 0) {
+      sim.holdT += dt;
+      if (sim.holdT > CHARGE.start) {
+        const level = Math.min(1, (sim.holdT - CHARGE.start) / CHARGE.full);
+        if (pose.charge < 0) sfx.charge();
+        if (level >= 1 && pose.charge < 1) {
+          sfx.ready();
+          spawnRing(sim.pos.x, sim.pos.z, classId ? CLASSES[classId].accent : '#ffd25a', 1.6, 0.35);
+        }
+        pose.charge = level;
+      }
+    } else if (pose.charge >= 0) {
+      // lasciato il tasto: colpo; schivata, caduta o un menu: la carica si perde
+      const level = pose.charge;
+      pose.charge = -1;
+      sim.holdT = -1;
+      if (alive && !blocked && !input.attackHeld && sim.dodgeLeft <= 0) {
+        ctx.x = sim.pos.x;
+        ctx.z = sim.pos.z;
+        ctx.yaw = sim.yaw;
+        heavyAttack(ctx, level);
+        sim.attackCd = 0.55;
+        sim.comboTimer = 0;
+      }
+    } else if (!held) sim.holdT = -1;
+    chargeFx.level = pose.charge;
+    if (pose.charge >= 0) {
+      chargeFx.x = sim.pos.x;
+      chargeFx.y = sim.pos.y;
+      chargeFx.z = sim.pos.z;
+      chargeFx.color = classId ? CLASSES[classId].accent : '#ffd25a';
     }
 
     // abilità Q, E, R e Ultra F
@@ -502,7 +556,8 @@ export function LocalPlayer() {
     tmp.desiredCam.set(Math.sin(sim.camYaw) * cosP, Math.sin(sim.camPitch), Math.cos(sim.camYaw) * cosP);
     // non un raggio solo ma un fascio (centro e quattro lati): le colonne e i muri non
     // finiscono davanti all'obiettivo, e la telecamera si ferma un po' prima
-    let dist = sim.camDist;
+    // sui colpi forti la telecamera si avvicina di scatto; caricando, piano piano
+    let dist = sim.camDist * (1 - 0.22 * zoomAmount(dt)) * (1 - 0.08 * Math.max(0, pose.charge));
     const rx = Math.cos(sim.camYaw);
     const rz = -Math.sin(sim.camYaw);
     for (const [ox, oy] of CAM_RAYS) {

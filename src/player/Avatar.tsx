@@ -34,9 +34,11 @@ export interface Pose {
   phase: number;
   /** Stati del combattimento (VF): a terra, velo, Bastione, scudo… */
   flags: number;
+  /** Colpo in carica: da 0 a 1 (-1 se non si carica). */
+  charge: number;
 }
 
-export const newPose = (): Pose => ({ speed: 0, anim: 'idle', attackT: -1, attackN: 1, attackStyle: 'swing', attackSlot: null, dodgeT: -1, waveT: -1, phase: 0, flags: 0 });
+export const newPose = (): Pose => ({ speed: 0, anim: 'idle', attackT: -1, attackN: 1, attackStyle: 'swing', attackSlot: null, dodgeT: -1, waveT: -1, phase: 0, flags: 0, charge: -1 });
 
 /** Avanza i timer della posa. */
 export function tickPose(p: Pose, dt: number) {
@@ -78,6 +80,10 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
   const [readyUrl, setReadyUrl] = useState<string | null>(null);
   const modelReady = !!def && readyUrl === def.url;
   const ctrl = useMemo(newCtrl, []);
+  const tintRgb = useMemo((): [number, number, number] => {
+    const c = new THREE.Color(cls?.accent ?? '#ffd25a');
+    return [c.r, c.g, c.b];
+  }, [cls]);
   const prevAttack = useRef(-1);
   const legL = useRef<THREE.Group>(null);
   const legR = useRef<THREE.Group>(null);
@@ -141,6 +147,11 @@ export function Avatar({ pose, classId, playerId, name, isSelf }: AvatarProps) {
     ctrl.move = p.anim === 'down' ? 'down' : p.speed > 0.5 && p.dodgeT < 0 ? 'run' : 'idle';
     ctrl.speed = p.speed;
     ctrl.roll = p.dodgeT >= 0 && p.anim !== 'down' ? Math.min(1, p.dodgeT / MOVE.dodgeTime) : -1;
+    // colpo in carica: il corpo si tende e si illumina del colore della classe (a carica piena pulsa)
+    ctrl.hold = p.charge;
+    ctrl.charge = p.charge >= 0 ? (p.charge >= 1 ? 0.75 + Math.sin(t * 14) * 0.25 : 0.15 + 0.6 * p.charge) : 0;
+    ctrl.tint = tintRgb;
+    ctrl.self = !!isSelf;
     if (p.attackT >= 0 && (prevAttack.current < 0 || p.attackT < prevAttack.current)) {
       ctrl.style = p.attackStyle;
       ctrl.combo = p.attackN;

@@ -18,6 +18,7 @@ import {
   REVIVE_SECONDS,
   ULTRA_GAIN,
   ULTRA_MAX,
+  isBoss,
   type EnemyType,
 } from './defs';
 import { roomAt, walkable, type Dungeon } from './dungeon';
@@ -27,7 +28,10 @@ import { emptyMods, type Mods } from '../progress/model';
 import { POTION_HEAL } from '../progress/defs';
 import { CITTA, OSSIGENO, colonneBolle, inColonna, passoOssigeno, type Colonna } from '../citta/core';
 import { sfx } from '../audio/sfx';
-import { shake } from './feel';
+import { shake, tickWarp, worldSpeed } from './feel';
+
+/** Schivata perfetta: quanto prima del colpo si può schivare (ms). */
+export const PERFECT_WINDOW_MS = 320;
 
 /** Quanto resta visibile un nemico sconfitto (caduta e dissolvenza). */
 export const DYING_MS = 900;
@@ -48,6 +52,8 @@ export interface EnemyView {
   flash: number;
   /** fine del preavviso in corso (il nemico "carica") */
   charging: number;
+  /** colpito da un attacco caricato: vola in aria (solo grafica, per chi l'ha colpito) */
+  launchAt?: number;
 }
 
 export interface Telegraph {
@@ -91,7 +97,7 @@ export interface PBolt {
   mine: boolean;
   color: string;
   /** onda: il potere "Onda del terzo colpo", attraversa i nemici */
-  kind: 'basic' | 'dardo' | 'onda';
+  kind: 'basic' | 'dardo' | 'onda' | 'carica';
   bounces: number;
   hit: Set<number>;
   alive: boolean;
@@ -341,6 +347,37 @@ class CombatRuntime {
     return null;
   }
 
+  /**
+   * Schivata perfetta: si schiva proprio mentre un colpo sta per arrivare (un preavviso
+   * a terra che scade entro poco con noi dentro, o un proiettile vicino che ci viene addosso).
+   */
+  perfectDodge(x: number, z: number, now: number): boolean {
+    if (!this.alive) return false;
+    for (const t of this.telegraphs) {
+      if (t.done || t.t1 < now || t.t1 - now > PERFECT_WINDOW_MS) continue;
+      if (t.k !== 'cone' && t.k !== 'circle') continue;
+      const dx = x - t.x;
+      const dz = z - t.z;
+      const d = Math.hypot(dx, dz);
+      if (d > t.rad + 0.35) continue;
+      if (t.k === 'cone' && d > 0.6) {
+        let diff = Math.atan2(dx, dz) - t.r;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        if (Math.abs(diff) > t.arc / 2 + 0.15) continue;
+      }
+      return true;
+    }
+    for (const p of this.eprojs) {
+      if (!p.alive || p.reflectedBy) continue;
+      const dx = x - p.x;
+      const dz = z - p.z;
+      const d = Math.hypot(dx, dz);
+      // vicino e diretto verso di noi
+      if (d < 2.6 && (dx * p.dx + dz * p.dz) / Math.max(0.01, d) > 0.7) return true;
+    }
+    return false;
+  }
+
   // --- colpi ai nemici ---------------------------------------------------------
 
   /** `charge = false` per i colpi della Ultra stessa: non devono ricaricarla. */
@@ -400,6 +437,8 @@ class CombatRuntime {
             this.enemies.set(id, v);
           }
           if (hp < v.hp) v.flash = now;
+          // un boss che si infuria: seconda fase
+          if (isBoss(v.type) && flags & EF.enraged && !(v.flags & EF.enraged)) phaseFx?.(v.type);
           v.hp = hp;
           v.maxHp = maxHp;
           v.flags = flags;
@@ -535,7 +574,9 @@ class CombatRuntime {
     this.selfPos.y = ctx.y;
     this.selfPos.z = ctx.z;
     const m = this.me;
-    const renderTime = now - NET.interpDelayMs;
+    // rallentatore (schivata perfetta): i nemici si vedono muovere più piano, poi recuperano
+    const renderTime = now - NET.interpDelayMs - tickWarp(dt, now);
+    const wdt = dt * worldSpeed(now);
 
     for (const [id, d] of this.dying) if (now - d.t0 > DYING_MS) this.dying.delete(id);
     // posizioni dei nemici come le vediamo
@@ -557,8 +598,9 @@ class CombatRuntime {
     for (const t of this.telegraphs) {
       if (t.done || now < t.t1) continue;
       t.done = true;
-      // id 0: le spine della Sala delle spine (non un nemico)
+      // id 0: le spine della Sala delle spine (non un nemico); gli altri: il colpo arriva a terra
       if (t.id === 0) trapFx?.(t.x, t.z, t.rad);
+      else teleFx?.(t);
       if (!ctx.inRun || !this.alive || (t.k !== 'cone' && t.k !== 'circle')) continue;
       const dx = ctx.x - t.x;
       const dz = ctx.z - t.z;
@@ -602,8 +644,8 @@ class CombatRuntime {
         p.dx = dx / d;
         p.dz = dz / d;
       }
-      p.x += p.dx * p.spd * dt;
-      p.z += p.dz * p.spd * dt;
+      p.x += p.dx * p.spd * wdt;
+      p.z += p.dz * p.spd * wdt;
       if (this.dungeon && !walkable(this.dungeon, p.x, p.z)) {
         p.alive = false;
         continue;
@@ -657,14 +699,16 @@ class CombatRuntime {
         b.hit.add(e.id);
         if (b.mine) {
           const dmg = b.dmg * b.mul;
-          this.queueHit({ e: e.id, d: dmg, kb: [b.dx * 2.5, b.dz * 2.5] });
+          const big = b.kind === 'carica';
+          this.queueHit({ e: e.id, d: dmg, kb: [b.dx * (big ? 12 : 2.5), b.dz * (big ? 12 : 2.5)], st: big ? 500 : undefined });
+          if (big) e.launchAt = now;
           this.number(e.x, 2, e.z, dmg, b.crit ? 'crit' : 'dmg');
           hitFx?.(e, dmg, b.crit, [b.dx, b.dz]);
           b.mul = 1;
           b.crit = false;
         }
         // l'onda attraversa i nemici
-        if (b.kind === 'onda') continue;
+        if (b.kind === 'onda' || b.kind === 'carica') continue;
         if (b.kind === 'dardo' && b.bounces > 0) {
           b.bounces--;
           b.dmg *= AB.dardo.falloff;
@@ -749,6 +793,16 @@ let deathFx: ((x: number, z: number, type: EnemyType) => void) | null = null;
 let hitFx: ((e: EnemyView, dmg: number, crit: boolean, dir: [number, number]) => void) | null = null;
 let killFx: ((id: number, x: number, z: number) => void) | null = null;
 let trapFx: ((x: number, z: number, r: number) => void) | null = null;
+let teleFx: ((t: Telegraph) => void) | null = null;
+let phaseFx: ((type: EnemyType) => void) | null = null;
+/** Un attacco nemico arriva a terra (polvere, scossa: lo imposta view.tsx). */
+export function setTeleFx(fn: typeof teleFx) {
+  teleFx = fn;
+}
+/** Un boss entra nella seconda fase (avviso, ruggito: lo imposta view.tsx). */
+export function setPhaseFx(fn: typeof phaseFx) {
+  phaseFx = fn;
+}
 /** Le spine escono dal pavimento (lo imposta view.tsx). */
 export function setTrapFx(fn: typeof trapFx) {
   trapFx = fn;
@@ -766,8 +820,9 @@ export function setDeathFx(fn: typeof deathFx) {
 }
 
 let comboTimer: ReturnType<typeof setTimeout> | null = null;
-export function showCombo(name: string) {
-  setGame({ combo: { name, t0: performance.now() } });
+/** Striscione al centro: le combo di coppia, e (con `label`) i momenti dei boss. */
+export function showCombo(name: string, label?: string) {
+  setGame({ combo: { name, t0: performance.now(), label } });
   if (comboTimer) clearTimeout(comboTimer);
   comboTimer = setTimeout(() => setGame({ combo: null }), 2200);
 }
