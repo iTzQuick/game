@@ -20,7 +20,8 @@ import type { EnemySim, PlayerView } from './sim';
 export const BOT_PREFIX = 'ia-';
 export const isBotId = (id: string) => id.startsWith(BOT_PREFIX);
 export const botId = (cls: ClassId) => `${BOT_PREFIX}${cls}`;
-export const botName = (cls: ClassId) => `${CLASSES[cls].name} (compagno)`;
+/** Nome corto sopra la testa: "Custode (IA)". */
+export const botName = (cls: ClassId) => `${CLASSES[cls].name.split(' ')[0]} (IA)`;
 
 /** Quanti compagni con `humans` giocatori: da soli due, in due uno, in tre o più nessuno. */
 export function botCount(humans: number): number {
