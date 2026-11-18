@@ -347,13 +347,18 @@ async function fratturaTests(browser) {
       await p.keyboard.press(k);
       await sleep(150);
     }
-    await sleep(300);
+    // con 4 finestre aperte il gioco va lento: si aspetta che abbia elaborato i tasti (fino a 2 s)
     used.push(
-      await g(p, () => {
-        const me = window.__fratture.combat.me;
-        const now = performance.now();
-        return me.cd.Q > now && me.cd.E > now && me.cd.R > now && me.ultra < 100;
-      }),
+      await waitFor(
+        p,
+        () => {
+          const me = window.__fratture.combat.me;
+          const now = performance.now();
+          return me.cd.Q > now && me.cd.E > now && me.cd.R > now && me.ultra < 100;
+        },
+        null,
+        2000,
+      ),
     );
     // il Varco del Tessitore arriva anche all'host
     if (p === others[1]) sawVarco = await waitFor(P, () => [...window.__fratture.combat.zones.values()].some((z) => z.kind === 'varco'), null, 3000);

@@ -8,6 +8,7 @@
 //   node scripts/models/prepare.mjs out.glb base.glb:idle [run.glb:run ...] [--texture 1024]
 //   node scripts/models/prepare.mjs out.glb pronto.glb nuovo.glb:attack2@0.4-1.2 --tieni   (aggiunge clip)
 //   --sul-posto: i clip aggiunti restano sul posto (niente spostamento dei fianchi in avanti)
+//   con --tieni un clip con lo stesso nome di uno già presente lo sostituisce
 //
 // Il file base dà mesh, materiali e scheletro; il suo primo clip prende il nome indicato.
 // Un clip si può ritagliare indicando inizio e fine in secondi: attack.glb:attack@0.7-1.5
@@ -90,6 +91,18 @@ if (!keepBase) {
 }
 
 const nodesByName = new Map(root.listNodes().map((n) => [n.getName(), n]));
+
+// con --tieni, un clip nuovo con lo stesso nome di uno vecchio lo sostituisce
+if (keepBase) {
+  const incoming = new Set(extra.map((spec) => split(spec)[1]).filter(Boolean));
+  for (const a of root.listAnimations()) {
+    if (!incoming.has(a.getName())) continue;
+    for (const ch of a.listChannels()) ch.dispose();
+    for (const sm of a.listSamplers()) sm.dispose();
+    console.log(`clip "${a.getName()}" sostituito`);
+    a.dispose();
+  }
+}
 
 for (const spec of extra) {
   const [path, clipName, trim] = split(spec);
