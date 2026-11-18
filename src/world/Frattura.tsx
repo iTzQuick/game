@@ -13,6 +13,7 @@ import { SkyBand } from './SkyBand';
 import { SURFACES } from './textures';
 import { CITTA, OSSIGENO, colonneBolle, type Colonna } from '../citta/core';
 import { PropOr } from '../player/models';
+import { Puddles } from '../fx/water';
 
 const ROOM_TINTS = ['#2fd6a0', '#8fd14f', '#ff4f9a', '#b48cff', '#e9e4ff', '#19d3c5'];
 const CITTA_TINTS = ['#5dffd0', '#2fd6a0', '#7fe8ff', '#19d3c5'];
@@ -81,6 +82,8 @@ export function Frattura({ quality }: { quality: Quality }) {
         <RoomDecor key={r.i} d={d} i={r.i} quality={quality} active={run.fight === r.i} tints={tints} />
       ))}
       {citta && <CittaDecor d={d} quality={quality} />}
+      {/* pozze d'acqua (sul fondo della Città Sommersa no: è già tutto acqua) */}
+      {!citta && <Puddles d={d} />}
       {run.phase === 'complete' && <ExitPortal x={d.rooms[d.rooms.length - 1].cx} z={d.rooms[d.rooms.length - 1].rect.z0 + 4} />}
     </group>
   );

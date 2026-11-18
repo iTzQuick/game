@@ -26,6 +26,7 @@ export interface ModelDef {
   /** velocità dei clip d'attacco diversi da `attack` (altrimenti attackSpeed) */
   speeds?: Partial<Record<AttackKey, number>>;
   /** velocità (m/s) a cui il clip di corsa sembra giusto */
+  /** velocità (m/s) a cui il clip di corsa appoggia i piedi senza scivolare (scripts/models/passo.mjs) */
   runSpeed?: number;
   /** velocità del clip d'attacco (già ritagliato attorno al colpo) */
   attackSpeed?: number;
@@ -91,7 +92,12 @@ const ATTACK_KEYS: AttackKey[] = ['attack', 'attack2', 'attack3', 'abQ', 'abE', 
 export type ClipKey = 'idle' | 'run' | 'down' | 'dodge' | AttackKey;
 type ActionKey = ClipKey | 'runLower';
 /** Quanto dura la capriola disegnata (s): un po' più della schivata vera, così si vede tutta. */
-const DODGE_ANIM = 0.5;
+const DODGE_ANIM = 0.46;
+/**
+ * Il clip della capriola (1,4 s) passa la prima parte ad abbassarsi piano: si parte da qui,
+ * così la capriola vera cade mentre il personaggio scatta in avanti, non dopo.
+ */
+const DODGE_CLIP_START = 0.55;
 /** Ossa della parte alta (scheletro Meshy): busto, collo, testa, spalle e braccia. */
 const UPPER_BODY = /Spine|neck|Neck|Head|Shoulder|Arm|Hand/;
 
@@ -261,8 +267,11 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
     const rolling = ctrl.roll >= 0;
     if (rolling && !st.wasRolling && actions.dodge) {
       st.dodgeUntil = now + DODGE_ANIM * 1000;
+      const dur = actions.dodge.getClip().duration;
+      const start = dur > 1 ? Math.min(DODGE_CLIP_START, dur * 0.5) : 0;
       actions.dodge.reset();
-      actions.dodge.timeScale = actions.dodge.getClip().duration / DODGE_ANIM;
+      actions.dodge.time = start;
+      actions.dodge.timeScale = (dur - start) / DODGE_ANIM;
       if (st.active.has(actions.dodge)) actions.dodge.setEffectiveWeight(1);
     }
     st.wasRolling = rolling;
@@ -299,11 +308,15 @@ export function RiggedModel({ def, ctrl, onReady }: { def: ModelDef; ctrl: Model
         st.active.delete(a);
       }
     }
-    const runScale = Math.max(0.6, Math.min(1.6, ctrl.speed / (def.runSpeed ?? 6)));
+    // la corsa va alla velocità giusta perché i piedi non scivolino: runSpeed è la velocità
+    // "naturale" del clip, misurata sui piedi (scripts/models/passo.mjs)
+    const runScale = Math.max(0.6, Math.min(3.8, ctrl.speed / (def.runSpeed ?? 4.5)));
     if (actions.run) actions.run.timeScale = runScale;
     if (actions.runLower) actions.runLower.timeScale = runScale;
     // pausa all'impatto: le animazioni quasi si fermano, e l'attacco dura quel tanto di più
-    const slow = animScale(now) * (ctrl.self ? 1 : worldSpeed(now));
+    // la propria capriola non si ferma con la pausa all'impatto (verrebbe tagliata a metà)
+    const selfRolling = ctrl.self && now < st.dodgeUntil;
+    const slow = selfRolling ? 1 : animScale(now) * (ctrl.self ? 1 : worldSpeed(now));
     if (slow < 1 && attacking) {
       st.attackUntil += dt * 1000 * (1 - slow);
       st.attackStart += dt * 1000 * (1 - slow);

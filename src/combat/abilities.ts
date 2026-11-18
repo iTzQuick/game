@@ -10,6 +10,7 @@ import { getGame } from '../game/store';
 import { getRoom } from '../net/room';
 import { dustColor, spawnFlash, spawnPuff, spawnRing, spawnSlash, spawnSmoke, spawnSparks, spawnZap, addBeam } from '../fx/effects';
 import { BOON, boonLevel, orbState } from './boons';
+import { splashBig } from '../fx/water';
 import { sfx } from '../audio/sfx';
 import { hitStop, shake, zoomKick } from './feel';
 import { emitCombat } from './bus';
@@ -474,6 +475,7 @@ export function heavyAttack(ctx: PlayerCtx, level: number) {
       spawnFlash(cx, cz, color, r * 0.6, 0.3);
       spawnSparks(cx, 0.3, cz, color, Math.round(14 + 14 * l), 1.2 + 0.6 * l);
       spawnSmoke(cx, 0.2, cz, Math.round(6 + 6 * l), 1 + 0.6 * l, dustColor());
+      splashBig(cx, cz, 0.8 + l);
       for (const e of [...combat.enemies.values()]) {
         if (!e.ready || Math.hypot(e.x - cx, e.z - cz) > r + ENEMIES[e.type].radius) continue;
         const sc = scale(base * mul, 'basic', ctx.cls);

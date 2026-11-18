@@ -52,9 +52,19 @@ export interface DRoom {
   pillars: Pillar[];
   /** solo per le stanze di combattimento */
   variant?: RoomVariant;
+  /** pozze d'acqua sul pavimento (solo grafica e schizzi) */
+  puddles: Puddle[];
   /** x della porta sud (da dove si entra) e nord (da dove si esce). */
   doorSouthX: number | null;
   doorNorthX: number | null;
+}
+
+export interface Puddle {
+  x: number;
+  z: number;
+  r: number;
+  /** seme della forma (bordo irregolare) */
+  shape: number;
 }
 
 export interface Corridor {
@@ -109,6 +119,7 @@ export function generateDungeon(seed: number, grado: number): Dungeon {
       d,
       rect: { x0: cx - w / 2, x1: cx + w / 2, z0: cz - d / 2, z1: cz + d / 2 },
       pillars: [],
+      puddles: [],
       doorSouthX: null,
       doorNorthX: null,
     });
@@ -162,7 +173,44 @@ export function generateDungeon(seed: number, grado: number): Dungeon {
     }
   }
 
+  placePuddles(rooms, seed);
   return { seed, rooms, corridors };
+}
+
+/**
+ * Pozze d'acqua: da un seme a parte (la forma della Frattura non cambia), lontane da
+ * colonne, porte e muri; nessuna nella stanza d'ingresso né sul forziere.
+ */
+function placePuddles(rooms: DRoom[], seed: number) {
+  const rand = rng((seed ^ 0x5a17e3c1) >>> 0);
+  for (const room of rooms) {
+    if (room.kind === 'start') continue;
+    const want = room.kind === 'boss' ? 3 : Math.floor(rand() * 3.2);
+    const doors: [number, number][] = [];
+    if (room.doorSouthX !== null) doors.push([room.doorSouthX, room.rect.z1]);
+    if (room.doorNorthX !== null) doors.push([room.doorNorthX, room.rect.z0]);
+    for (let tries = 0; tries < 40 && room.puddles.length < want; tries++) {
+      const r = 1.3 + rand() * 1.9;
+      const x = room.rect.x0 + r + 1.2 + rand() * (room.w - 2 * (r + 1.2));
+      const z = room.rect.z0 + r + 1.2 + rand() * (room.d - 2 * (r + 1.2));
+      const shape = rand();
+      if (doors.some(([dx, dz]) => Math.hypot(dx - x, dz - z) < r + 3.5)) continue;
+      if (room.pillars.some((p) => Math.hypot(p.x - x, p.z - z) < p.r + r + 0.4)) continue;
+      if (room.puddles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 1)) continue;
+      if (room.variant === 'tesoro' && Math.hypot(room.cx - x, room.cz - z) < r + 2.5) continue;
+      room.puddles.push({ x, z, r, shape });
+    }
+  }
+}
+
+/** La pozza sotto questo punto, se c'è (il bordo è un po' irregolare: si usa il raggio). */
+export function puddleAt(d: Dungeon, x: number, z: number): Puddle | null {
+  for (const room of d.rooms) {
+    if (!inRect(room.rect, x, z)) continue;
+    for (const p of room.puddles) if (Math.hypot(p.x - x, p.z - z) <= p.r * 0.92) return p;
+    return null;
+  }
+  return null;
 }
 
 /**

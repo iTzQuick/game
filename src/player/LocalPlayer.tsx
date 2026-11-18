@@ -15,6 +15,7 @@ import type { AnimState } from '../net/interpolation';
 import { fratturaInteractables, nearestInteractable, RIFT } from '../world/layout';
 import { CHARGE, basicAttack, castAbility, dodgeBoon, heavyAttack, onVarcoPass, perfectCounter, resetAbilities, tickAbilities, type PlayerCtx } from '../combat/abilities';
 import { chargeFx, spawnRing } from '../fx/effects';
+import { splashBig, splashStep } from '../fx/water';
 import { BOON, boonLevel, boonsForRun, modsWithBoons } from '../combat/boons';
 import { CLASS_STATS } from '../combat/defs';
 import { checkpoint, generateDungeon } from '../combat/dungeon';
@@ -44,7 +45,8 @@ const CAM_RAYS: [number, number][] = [
 let potionWarnAt = 0;
 
 const CAPSULE_HALF = 0.5;
-const CAPSULE_RADIUS = 0.38;
+// un po' più larga del corpo: braccia, scudo e mantello non entrano nei muri
+const CAPSULE_RADIUS = 0.44;
 /** Il centro della capsula sta a questa altezza sopra i piedi. */
 const FOOT_OFFSET = CAPSULE_HALF + CAPSULE_RADIUS;
 /** Dove si torna al Crocevia dopo una Frattura: davanti alla crepa. */
@@ -382,6 +384,7 @@ export function LocalPlayer() {
       combat.me.invulnUntil = Math.max(combat.me.invulnUntil, now + MOVE.dodgeIFrames * 1000);
       sfx.dodge();
       dodgeBoon(sim.pos.x, sim.pos.z);
+      if (inRun) splashBig(sim.pos.x, sim.pos.z, 0.5);
       // schivata perfetta: proprio mentre un colpo stava per arrivare
       if (inRun && combat.perfectDodge(sim.pos.x, sim.pos.z, now)) {
         slowMo(PERFECT.slowMs, PERFECT.factor);
@@ -543,6 +546,7 @@ export function LocalPlayer() {
             : 'idle';
     pose.anim = anim;
     pose.speed = hSpeed;
+    if (inRun) splashStep('me', sim.pos.x, sim.pos.z, hSpeed);
     pose.flags = combat.flags(now);
     tickPose(pose, dt);
     const g = group.current!;

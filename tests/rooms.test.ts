@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateDungeon, type RoomVariant } from '../src/combat/dungeon';
+import { generateDungeon, puddleAt, type RoomVariant } from '../src/combat/dungeon';
 import { EnemySim, ELITE } from '../src/combat/sim';
 import { ENEMIES, WAVE_POOLS, rng, scaling } from '../src/combat/defs';
 
@@ -54,5 +54,25 @@ describe('Stanze speciali', () => {
     }
     expect(foundChampion && foundTreasure).toBe(true);
     expect(WAVE_POOLS.frattura.length).toBeGreaterThan(0);
+  });
+
+  it('pozze d’acqua: uguali per tutti, mai nell’ingresso, lontane da colonne e porte', () => {
+    let total = 0;
+    for (let seed = 1; seed < 200; seed++) {
+      const d = generateDungeon(seed * 911, 1 + (seed % 9));
+      expect(generateDungeon(seed * 911, 1 + (seed % 9)).rooms.map((r) => r.puddles)).toEqual(d.rooms.map((r) => r.puddles));
+      expect(d.rooms[0].puddles).toHaveLength(0);
+      for (const r of d.rooms) {
+        for (const p of r.puddles) {
+          total++;
+          expect(p.x - p.r).toBeGreaterThan(r.rect.x0);
+          expect(p.x + p.r).toBeLessThan(r.rect.x1);
+          for (const c of r.pillars) expect(Math.hypot(c.x - p.x, c.z - p.z)).toBeGreaterThan(c.r + p.r);
+          if (r.doorSouthX !== null) expect(Math.hypot(r.doorSouthX - p.x, r.rect.z1 - p.z)).toBeGreaterThan(p.r + 3);
+          expect(puddleAt(d, p.x, p.z)).toBe(p);
+        }
+      }
+    }
+    expect(total).toBeGreaterThan(300);
   });
 });
